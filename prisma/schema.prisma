@@ -1,0 +1,396 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum RoomType {
+  GLOBAL
+  PRIVATE
+  GROUP
+  GAME
+}
+
+enum RoomVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum RoomStatus {
+  WAITING
+  STARTING
+  FULL
+  LIVE
+}
+
+enum StreamStatus {
+  LIVE
+  OFFLINE
+  ENDED
+}
+
+enum PresenceState {
+  ONLINE
+  AWAY
+  OFFLINE
+}
+
+enum GameMatchStatus {
+  WAITING
+  ACTIVE
+  FINISHED
+}
+
+enum MarketplaceItemType {
+  DECK
+  GIFT
+  BADGE
+  THEME
+}
+
+enum CurrencyType {
+  COINS
+  GEMS
+}
+
+enum ItemRarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+}
+
+enum DeckApplyScope {
+  DECK
+  CARD
+  SUIT
+}
+
+model User {
+  id              String           @id @default(cuid())
+  email           String           @unique
+  handle          String           @unique
+  name            String
+  avatarSeed      String
+  passwordHash    String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  profile         Profile?
+  presence        Presence?
+  hostedRooms     Room[]           @relation("HostedRooms")
+  memberships     RoomMembership[]
+  messages        Message[]
+  liveSessions    LiveSession[]
+  liveChatMessages LiveChatMessage[]
+  liveGiftEvents  LiveGiftEvent[]
+  creatorClips    CreatorClip[]
+  inventoryItems  UserInventoryItem[]
+  cardArtworks    CardArtwork[]
+  deckTemplates   DeckTemplate[]
+}
+
+model Profile {
+  id              String           @id @default(cuid())
+  userId          String           @unique
+  displayName     String
+  username        String           @unique
+  roleLine        String
+  bio             String
+  tagline         String
+  level           Int              @default(1)
+  wins            Int              @default(0)
+  followers       Int              @default(0)
+  following       Int              @default(0)
+  loves           Int              @default(0)
+  points          Int              @default(0)
+  gems            Int              @default(0)
+  elo             Int              @default(0)
+  rankLabel       String
+  currentStatus   String
+  highlightLabel  String
+  highlightCopy   String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievements    Achievement[]
+  collectionCards CollectionCard[]
+  roadmapItems    RoadmapItem[]
+}
+
+model Achievement {
+  id        String   @id @default(cuid())
+  profileId String
+  emoji     String
+  label     String
+  order     Int      @default(0)
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model CollectionCard {
+  id        String   @id @default(cuid())
+  profileId String
+  symbol    String
+  label     String
+  order     Int      @default(0)
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model RoadmapItem {
+  id        String   @id @default(cuid())
+  profileId String
+  label     String
+  order     Int      @default(0)
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model TimelineTask {
+  id        String   @id @default(cuid())
+  label     String
+  isDone    Boolean  @default(false)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model Room {
+  id                 String           @id @default(cuid())
+  slug               String           @unique
+  name               String
+  description        String
+  type               RoomType
+  visibility         RoomVisibility   @default(PUBLIC)
+  status             RoomStatus       @default(WAITING)
+  mode               String
+  hostUserId         String
+  currentPlayers     Int              @default(1)
+  maxPlayers         Int              @default(4)
+  onlineCount        Int              @default(0)
+  bots               Int              @default(0)
+  unreadCount        Int              @default(0)
+  pointsRequired     Int              @default(0)
+  featured           Boolean          @default(false)
+  isVoiceEnabled     Boolean          @default(false)
+  isRanked           Boolean          @default(false)
+  lastMessagePreview String
+  lastActivityAt     DateTime         @default(now())
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  hostUser           User             @relation("HostedRooms", fields: [hostUserId], references: [id], onDelete: Cascade)
+  memberships        RoomMembership[]
+  messages           Message[]
+  liveSession        LiveSession?
+  gameMatch          GameMatch?
+}
+
+model RoomMembership {
+  id        String   @id @default(cuid())
+  roomId     String
+  userId     String
+  isHost     Boolean  @default(false)
+  seatOrder  Int      @default(0)
+  seatLabel  String?
+  joinedAt    DateTime @default(now())
+  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LiveSession {
+  id            String       @id @default(cuid())
+  hostUserId    String
+  roomId        String?      @unique
+  title         String
+  game          String
+  viewers       Int          @default(0)
+  likeCount     Int          @default(0)
+  commentCount  Int          @default(0)
+  thumbnailSeed String
+  status        StreamStatus @default(LIVE)
+  isFeatured    Boolean      @default(false)
+  isVerified    Boolean      @default(false)
+  tags          String
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  hostUser      User         @relation(fields: [hostUserId], references: [id], onDelete: Cascade)
+  room          Room?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  chatMessages  LiveChatMessage[]
+  gifts         LiveGiftEvent[]
+  clips         CreatorClip[]
+}
+
+model LiveChatMessage {
+  id            String      @id @default(cuid())
+  liveSessionId  String
+  userId        String
+  content       String
+  createdAt     DateTime    @default(now())
+  liveSession   LiveSession @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LiveGiftEvent {
+  id               String          @id @default(cuid())
+  liveSessionId     String
+  senderUserId     String
+  marketplaceItemId String?
+  itemName         String
+  imageKey         String
+  quantity         Int             @default(1)
+  totalValue       Int
+  currency         CurrencyType
+  createdAt        DateTime        @default(now())
+  liveSession      LiveSession     @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
+  senderUser       User            @relation(fields: [senderUserId], references: [id], onDelete: Cascade)
+  marketplaceItem  MarketplaceItem? @relation(fields: [marketplaceItemId], references: [id], onDelete: SetNull)
+}
+
+model CreatorClip {
+  id             String       @id @default(cuid())
+  hostUserId     String
+  liveSessionId   String?
+  title          String
+  durationLabel  String
+  views          Int          @default(0)
+  accentTone     String
+  createdAt      DateTime     @default(now())
+  hostUser       User         @relation(fields: [hostUserId], references: [id], onDelete: Cascade)
+  liveSession    LiveSession? @relation(fields: [liveSessionId], references: [id], onDelete: SetNull)
+}
+
+model Presence {
+  id            String        @id @default(cuid())
+  userId        String        @unique
+  state         PresenceState @default(ONLINE)
+  currentScreen String?
+  latencyMs     Int?
+  lastSeenAt    DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model GameMatch {
+  id                String          @id @default(cuid())
+  roomId            String          @unique
+  status            GameMatchStatus @default(ACTIVE)
+  roundNumber       Int             @default(1)
+  trickNumber       Int             @default(1)
+  turnSeat          Int             @default(0)
+  leadSuit          String?
+  crownsReleased    Boolean         @default(false)
+  lastWinnerSeat    Int?
+  statePayload      String
+  settingsPayload   String
+  lastActionSummary String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  room              Room            @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  events            GameMatchEvent[]
+}
+
+model GameMatchEvent {
+  id         String    @id @default(cuid())
+  gameMatchId String
+  actorUserId String?
+  eventType  String
+  summary    String
+  payload    String?
+  createdAt  DateTime  @default(now())
+  gameMatch  GameMatch @relation(fields: [gameMatchId], references: [id], onDelete: Cascade)
+}
+
+model DeckStyle {
+  id           String   @id @default(cuid())
+  key          String   @unique
+  name         String
+  gradientFrom String
+  gradientTo   String
+  order        Int      @default(0)
+  featured     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  templates    DeckTemplate[]
+}
+
+model MarketplaceItem {
+  id          String              @id @default(cuid())
+  name        String
+  description String
+  price       Int
+  currency    CurrencyType
+  imageKey    String
+  type        MarketplaceItemType
+  rarity      ItemRarity
+  isPopular   Boolean             @default(false)
+  isNew       Boolean             @default(false)
+  isFeatured  Boolean             @default(false)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  giftEvents  LiveGiftEvent[]
+  inventoryItems UserInventoryItem[]
+}
+
+model UserInventoryItem {
+  id                String          @id @default(cuid())
+  userId            String
+  marketplaceItemId String
+  quantity          Int             @default(0)
+  isEquipped        Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  marketplaceItem   MarketplaceItem @relation(fields: [marketplaceItemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, marketplaceItemId])
+}
+
+model CardArtwork {
+  id           String         @id @default(cuid())
+  userId       String
+  originalName String
+  filePath     String
+  storageProvider String?
+  storageKey   String?
+  publicUrl    String?
+  mimeType     String
+  width        Int?
+  height       Int?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templates    DeckTemplate[]
+}
+
+model DeckTemplate {
+  id         String         @id @default(cuid())
+  userId     String
+  name       String
+  styleKey   String?
+  artworkId  String?
+  scope      DeckApplyScope @default(DECK)
+  targetCard String?
+  targetSuit String?
+  zoom       Int            @default(100)
+  rotation   Int            @default(0)
+  offsetX    Int            @default(0)
+  offsetY    Int            @default(0)
+  isEquipped Boolean        @default(false)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deckStyle  DeckStyle?     @relation(fields: [styleKey], references: [key], onDelete: SetNull)
+  artwork    CardArtwork?   @relation(fields: [artworkId], references: [id], onDelete: SetNull)
+}
