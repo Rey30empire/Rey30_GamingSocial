@@ -50,6 +50,8 @@ Para migraciones Prisma:
   - Ejecuta `prisma db push` usando `DATABASE_URL` o el fallback de Netlify DB.
 - `netlify.toml`
   - Fija `NODE_VERSION=22` y hace que Netlify ejecute `npm run db:bootstrap && npm run build`.
+- `npm run build`
+  - Usa `next build --webpack` para evitar el fallo de Turbopack con `lightningcss` en Linux durante el deploy.
 
 ## Datos demo
 
