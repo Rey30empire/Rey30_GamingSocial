@@ -2,16 +2,22 @@
   "name": "rey30verse",
   "version": "0.2.0",
   "private": true,
+  "packageManager": "npm@10.9.4",
+  "engines": {
+    "node": "22.x",
+    "npm": "10.x"
+  },
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "eslint .",
+    "postinstall": "prisma generate",
     "db:bootstrap": "node scripts/bootstrap-db.mjs",
-    "db:push": "prisma db push",
+    "db:push": "node scripts/prisma-command.mjs db push",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:reset": "prisma migrate reset"
+    "db:migrate": "node scripts/prisma-command.mjs migrate dev",
+    "db:reset": "node scripts/prisma-command.mjs migrate reset"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1018.0",
@@ -20,6 +26,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^5.1.1",
     "@mdxeditor/editor": "^3.39.1",
+    "@netlify/neon": "^0.1.2",
     "@prisma/client": "^6.11.1",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",

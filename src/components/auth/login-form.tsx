@@ -9,14 +9,18 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Crown, Loader2, Lock, Sparkles } from 'lucide-react'
 
-const DEMO_EMAIL = 'alex@rey30verse.gg'
-const DEMO_PASSWORD = 'rey30demo'
+interface LoginFormProps {
+  demoCredentials?: {
+    identifier: string
+    password: string
+  } | null
+}
 
-export function LoginForm() {
+export function LoginForm({ demoCredentials = null }: LoginFormProps) {
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') ?? '/'
-  const [identifier, setIdentifier] = useState(DEMO_EMAIL)
-  const [password, setPassword] = useState(DEMO_PASSWORD)
+  const [identifier, setIdentifier] = useState(demoCredentials?.identifier ?? '')
+  const [password, setPassword] = useState(demoCredentials?.password ?? '')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -87,14 +91,16 @@ export function LoginForm() {
             />
           </div>
 
-          <div className="rounded-[1.2rem] border border-violet-400/10 bg-white/[0.04] p-4 text-sm text-zinc-300">
-            <div className="flex items-center gap-2 text-violet-100">
-              <Lock className="h-4 w-4" />
-              Credenciales demo
+          {demoCredentials ? (
+            <div className="rounded-[1.2rem] border border-violet-400/10 bg-white/[0.04] p-4 text-sm text-zinc-300">
+              <div className="flex items-center gap-2 text-violet-100">
+                <Lock className="h-4 w-4" />
+                Credenciales demo
+              </div>
+              <p className="mt-2">Email: {demoCredentials.identifier}</p>
+              <p>Password: {demoCredentials.password}</p>
             </div>
-            <p className="mt-2">Email: {DEMO_EMAIL}</p>
-            <p>Password: {DEMO_PASSWORD}</p>
-          </div>
+          ) : null}
 
           {error ? <p className="text-sm text-rose-300">{error}</p> : null}
 

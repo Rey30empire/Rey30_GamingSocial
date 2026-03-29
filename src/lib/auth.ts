@@ -3,8 +3,9 @@ import { getServerSession } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { db } from '@/lib/db'
 import { verifyPassword } from '@/lib/passwords'
+import { getAuthSecret } from '@/lib/runtime-config'
 
-const AUTH_SECRET = process.env.NEXTAUTH_SECRET ?? 'rey30verse-dev-secret'
+const AUTH_SECRET = getAuthSecret()
 
 export class AuthRequiredError extends Error {
   constructor(message = 'AUTH_REQUIRED') {

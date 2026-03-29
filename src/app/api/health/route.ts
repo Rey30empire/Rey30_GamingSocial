@@ -1,32 +1,10 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getStorageHealthSnapshot } from '@/lib/storage'
+import { getDatabaseMode } from '@/lib/runtime-config'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-function getDatabaseMode() {
-  const databaseUrl = process.env.DATABASE_URL?.trim() || ''
-
-  if (!databaseUrl) {
-    return {
-      mode: 'missing',
-      detail: 'DATABASE_URL no esta configurada.',
-    }
-  }
-
-  if (databaseUrl.startsWith('file:')) {
-    return {
-      mode: 'sqlite-local',
-      detail: 'SQLite local activo. Ideal para desarrollo o demo privada.',
-    }
-  }
-
-  return {
-    mode: 'external',
-    detail: 'Base de datos externa configurada por DATABASE_URL.',
-  }
-}
 
 export async function GET() {
   const storage = await getStorageHealthSnapshot()

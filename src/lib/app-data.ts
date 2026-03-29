@@ -25,6 +25,7 @@ import type {
 } from '@/lib/app-types'
 import { basename, extname } from 'node:path'
 import sharp from 'sharp'
+import { isRuntimeSeedEnabled } from '@/lib/runtime-config'
 
 const CURRENT_USER_HANDLE = 'alexrey30'
 const DEMO_PASSWORD = 'rey30demo'
@@ -704,6 +705,10 @@ async function getCurrentUserRecord() {
 }
 
 export async function ensureSeedData() {
+  if (!isRuntimeSeedEnabled()) {
+    return
+  }
+
   const [
     existingUsers,
     existingRooms,

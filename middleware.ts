@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getToken } from 'next-auth/jwt'
+import { getAuthSecret } from '@/lib/runtime-config'
 
-const AUTH_SECRET = process.env.NEXTAUTH_SECRET ?? 'rey30verse-dev-secret'
+const AUTH_SECRET = getAuthSecret()
 
 function isPublicAsset(pathname: string) {
   return (

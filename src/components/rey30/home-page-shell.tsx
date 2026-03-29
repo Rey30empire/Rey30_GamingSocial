@@ -1,6 +1,7 @@
 'use client'
 
 import { signOut } from 'next-auth/react'
+import { useSearchParams } from 'next/navigation'
 import { startTransition, useEffect, useRef, useState } from 'react'
 import type { AppSnapshot } from '@/lib/app-types'
 import { cn } from '@/lib/utils'
@@ -9,6 +10,7 @@ import { DashboardShowcase } from '@/components/rey30/dashboard-showcase'
 import { ChatSystem } from '@/components/rey30/chat-system'
 import { GameLobby } from '@/components/rey30/game-lobby'
 import { CardGame } from '@/components/rey30/card-game'
+import { SnakeRoom } from '@/components/rey30/snake-room'
 import { Marketplace } from '@/components/rey30/marketplace'
 import { LiveStreaming } from '@/components/rey30/live-streaming'
 import { CardCustomization } from '@/components/rey30/card-customization'
@@ -36,6 +38,7 @@ import {
 
 type SectionId = 'home' | 'chat' | 'games' | 'live' | 'market' | 'customize' | 'profile'
 type ConnectionState = 'connecting' | 'connected' | 'syncing' | 'reconnecting' | 'offline'
+type GameExperience = 'cards' | 'snake'
 
 const sectionMeta: Record<SectionId, { title: string; subtitle: string }> = {
   home: {
@@ -72,6 +75,7 @@ export default function HomePageShell() {
   const [activeTab, setActiveTab] = useState<SectionId>('home')
   const [showGame, setShowGame] = useState(false)
   const [activeGameRoomId, setActiveGameRoomId] = useState<string | null>(null)
+  const [activeGameExperience, setActiveGameExperience] = useState<GameExperience>('cards')
   const [appData, setAppData] = useState<AppSnapshot | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
@@ -79,6 +83,7 @@ export default function HomePageShell() {
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting')
   const [latencyMs, setLatencyMs] = useState<number | null>(null)
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
+  const searchParams = useSearchParams()
   const activeTabRef = useRef<SectionId>('home')
   const appDataRef = useRef<AppSnapshot | null>(null)
   const latencyRef = useRef<number | null>(null)
@@ -86,6 +91,7 @@ export default function HomePageShell() {
   const eventSourceRef = useRef<EventSource | null>(null)
   const pulseIntervalRef = useRef<number | null>(null)
   const isSigningOutRef = useRef(false)
+  const hasHandledDeepLinkRef = useRef(false)
 
   appDataRef.current = appData
   activeTabRef.current = activeTab
@@ -108,6 +114,27 @@ export default function HomePageShell() {
       setActiveGameRoomId(appData.lobby.rooms[0].id)
     }
   }, [activeGameRoomId, appData])
+
+  useEffect(() => {
+    if (hasHandledDeepLinkRef.current) {
+      return
+    }
+
+    const arcade = searchParams.get('arcade')
+
+    if (arcade === 'snake') {
+      hasHandledDeepLinkRef.current = true
+      setActiveGameExperience('snake')
+      setShowGame(true)
+      setActiveTab('games')
+      return
+    }
+
+    if (arcade === 'cards') {
+      hasHandledDeepLinkRef.current = true
+      openTable()
+    }
+  }, [searchParams])
 
   const loadAppData = async (reason = 'manual') => {
     const hasSnapshot = Boolean(appDataRef.current)
@@ -325,11 +352,19 @@ export default function HomePageShell() {
 
   const openTable = (roomId?: string) => {
     window.scrollTo(0, 0)
+    setActiveGameExperience('cards')
     if (roomId) {
       setActiveGameRoomId(roomId)
     } else if (appData?.lobby.rooms[0]?.id) {
       setActiveGameRoomId(appData.lobby.rooms[0].id)
     }
+    setShowGame(true)
+    setActiveTab('games')
+  }
+
+  const openSnakeArcade = () => {
+    window.scrollTo(0, 0)
+    setActiveGameExperience('snake')
     setShowGame(true)
     setActiveTab('games')
   }
@@ -388,7 +423,10 @@ export default function HomePageShell() {
       if (showGame) {
         return (
           <div className="space-y-4">
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Badge className="border-0 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white">
+                {activeGameExperience === 'snake' ? 'Sala Arcade Snake' : 'Mesa competitiva'}
+              </Badge>
               <Button
                 variant="outline"
                 onClick={() => setShowGame(false)}
@@ -398,7 +436,11 @@ export default function HomePageShell() {
               </Button>
             </div>
             <div className="surface-panel rounded-[1.8rem] p-2 sm:p-3">
-              <CardGame roomId={activeGameRoomId ?? appData.lobby.rooms[0]?.id ?? null} />
+              {activeGameExperience === 'snake' ? (
+                <SnakeRoom />
+              ) : (
+                <CardGame roomId={activeGameRoomId ?? appData.lobby.rooms[0]?.id ?? null} />
+              )}
             </div>
           </div>
         )
@@ -406,23 +448,51 @@ export default function HomePageShell() {
 
       return (
         <div className="space-y-6">
-          <GameLobby data={appData.lobby} onRefresh={loadAppData} onEnterRoom={openTable} />
+          <GameLobby
+            data={appData.lobby}
+            onRefresh={loadAppData}
+            onEnterRoom={openTable}
+            onEnterSnakeArcade={openSnakeArcade}
+          />
           <div className="surface-panel rounded-[1.6rem] p-5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm uppercase tracking-[0.28em] text-zinc-500">Mesa destacada</p>
-                <h3 className="mt-2 text-2xl font-semibold text-white">
-                  {appData.lobby.rooms[0]?.name ?? 'Sala relampago lista para entrar'}
-                </h3>
-                <p className="mt-1 text-zinc-400">Carga la mesa activa y entra directo al turno competitivo.</p>
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className="rounded-[1.4rem] border border-white/[0.08] bg-white/[0.04] p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.28em] text-zinc-500">Mesa destacada</p>
+                    <h3 className="mt-2 text-2xl font-semibold text-white">
+                      {appData.lobby.rooms[0]?.name ?? 'Sala relampago lista para entrar'}
+                    </h3>
+                    <p className="mt-1 text-zinc-400">Carga la mesa activa y entra directo al turno competitivo.</p>
+                  </div>
+                  <Button
+                    onClick={() => openTable(appData.lobby.rooms[0]?.id)}
+                    className="rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-6 py-6 text-base font-semibold text-white hover:opacity-90"
+                  >
+                    <Gamepad2 className="mr-2 h-4 w-4" />
+                    Entrar a la mesa activa
+                  </Button>
+                </div>
               </div>
-              <Button
-                onClick={() => openTable(appData.lobby.rooms[0]?.id)}
-                className="rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 px-6 py-6 text-base font-semibold text-white hover:opacity-90"
-              >
-                <Gamepad2 className="mr-2 h-4 w-4" />
-                Entrar a la mesa activa
-              </Button>
+
+              <div className="rounded-[1.4rem] border border-cyan-400/15 bg-cyan-500/[0.06] p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.28em] text-cyan-200/70">Arcade local</p>
+                    <h3 className="mt-2 text-2xl font-semibold text-white">Sala Snake clasica</h3>
+                    <p className="mt-1 text-zinc-300">
+                      Loop clasico, score local, reinicio rapido y soporte para teclado o touch pad.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={openSnakeArcade}
+                    className="rounded-full bg-gradient-to-r from-cyan-500 to-violet-500 px-6 py-6 text-base font-semibold text-white hover:opacity-90"
+                  >
+                    <Gamepad2 className="mr-2 h-4 w-4" />
+                    Entrar a Snake
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

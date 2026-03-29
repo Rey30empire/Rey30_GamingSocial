@@ -29,6 +29,7 @@ interface GameLobbyProps {
   data?: LobbySnapshot
   onRefresh?: () => Promise<void> | void
   onEnterRoom?: (roomId: string) => void
+  onEnterSnakeArcade?: () => void
 }
 
 const mockRooms: LobbySnapshot['rooms'] = [
@@ -127,7 +128,7 @@ function GameRoomCard({
   )
 }
 
-export function GameLobby({ data, onRefresh, onEnterRoom }: GameLobbyProps) {
+export function GameLobby({ data, onRefresh, onEnterRoom, onEnterSnakeArcade }: GameLobbyProps) {
   const rooms = data?.rooms ?? mockRooms
   const [showCreate, setShowCreate] = useState(false)
   const [botCount, setBotCount] = useState(0)
@@ -465,6 +466,29 @@ export function GameLobby({ data, onRefresh, onEnterRoom }: GameLobbyProps) {
 
       {/* Room List */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="bg-[#12121a] border-cyan-500/20 p-5 lg:col-span-2">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Badge className="border-0 bg-cyan-500/15 text-cyan-100">Arcade local</Badge>
+                <Badge className="border-0 bg-violet-500/15 text-violet-100">Snake</Badge>
+              </div>
+              <h3 className="mt-3 text-2xl font-semibold text-white">Sala Arcade Snake</h3>
+              <p className="mt-1 max-w-2xl text-sm text-zinc-400">
+                Movimiento por grid, crecimiento por comida, score local y reinicio inmediato dentro del hub actual.
+              </p>
+            </div>
+
+            <Button
+              onClick={onEnterSnakeArcade}
+              className="rounded-full bg-gradient-to-r from-cyan-500 to-violet-500 px-6 text-white hover:opacity-90"
+            >
+              <Gamepad2 className="w-4 h-4 mr-2" />
+              Entrar a Snake
+            </Button>
+          </div>
+        </Card>
+
         {filteredRooms.length ? (
           filteredRooms.map((room) => (
             <GameRoomCard key={room.id} room={room} onEnter={onEnterRoom} />

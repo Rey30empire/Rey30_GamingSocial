@@ -1,19 +1,28 @@
 import { PrismaClient } from '@prisma/client'
+import { getDatabaseUrl, isDatabaseConfigured as hasDatabaseConfig } from '@/lib/runtime-config'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
 export function isDatabaseConfigured() {
-  return Boolean(process.env.DATABASE_URL?.trim())
+  return hasDatabaseConfig()
 }
 
 function createPrismaClient() {
-  if (!isDatabaseConfigured()) {
-    throw new Error('DATABASE_URL is not configured.')
+  const databaseUrl = getDatabaseUrl()
+
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL or NETLIFY_DATABASE_URL is not configured.')
   }
 
-  return new PrismaClient()
+  return new PrismaClient({
+    datasources: {
+      db: {
+        url: databaseUrl,
+      },
+    },
+  })
 }
 
 function getPrismaClient() {
