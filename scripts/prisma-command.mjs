@@ -1,10 +1,16 @@
 import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const prismaCliPath = resolve(scriptDirectory, '../node_modules/prisma/build/index.js')
-process.loadEnvFile?.(resolve(scriptDirectory, '../.env'))
+const envPath = resolve(scriptDirectory, '../.env')
+
+if (existsSync(envPath)) {
+  process.loadEnvFile?.(envPath)
+}
+
 const configuredDatabaseSchema = process.env.REY30_DATABASE_SCHEMA?.trim() || 'rey30verse'
 
 function normalizeDatabaseUrl(url) {
