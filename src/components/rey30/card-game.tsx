@@ -545,7 +545,7 @@ function EffectHistoryStrip({ effects }: { effects: GameEffectHistorySnapshot[] 
             <article
               key={effect.id}
               className={cn(
-                'min-w-[16rem] rounded-lg border p-3',
+                'h-28 min-w-[16rem] overflow-hidden rounded-lg border p-3',
                 effectTone[effect.type] ?? 'border-white/[0.08] bg-white/[0.04] text-zinc-100'
               )}
             >
@@ -561,7 +561,7 @@ function EffectHistoryStrip({ effects }: { effects: GameEffectHistorySnapshot[] 
             </article>
           ))
         ) : (
-          <div className="min-w-[16rem] rounded-lg border border-dashed border-white/[0.08] bg-black/20 p-3 text-sm text-zinc-500">
+          <div className="flex h-28 min-w-[16rem] items-center rounded-lg border border-dashed border-white/[0.08] bg-black/20 p-3 text-sm text-zinc-500">
             No hay efectos de este tipo en la ronda.
           </div>
         )}
