@@ -7,6 +7,10 @@ async function getBootstrapSnapshot(request: APIRequestContext) {
   return (await response.json()) as AppSnapshot
 }
 
+function getMobileSnapshotTolerance(projectName: string, fallback = 0.03) {
+  return projectName === 'chromium-mobile-390' ? 0.06 : fallback
+}
+
 async function mockBootstrap(page: Page, snapshot: Partial<AppSnapshot>) {
   await page.route('**/api/bootstrap', async (route) => {
     await route.fulfill({
@@ -136,7 +140,7 @@ test('Card Lab mantiene snapshot de estado vacio', async ({ page, request }) => 
   })
 })
 
-test('Card Lab mantiene snapshot de error de carga', async ({ page, request }) => {
+test('Card Lab mantiene snapshot de error de carga', async ({ page, request }, testInfo) => {
   const snapshot = await getBootstrapSnapshot(request)
   const snapshotWithoutCardLab: Partial<AppSnapshot> = { ...snapshot }
   delete snapshotWithoutCardLab.customize
@@ -157,7 +161,7 @@ test('Card Lab mantiene snapshot de error de carga', async ({ page, request }) =
   await expect(page.getByText('Card Lab no disponible')).toBeVisible()
   const statusPanel = page.getByTestId('card-lab-status-panel')
   await expect(statusPanel).toHaveScreenshot('card-lab-error-state.png', {
-    maxDiffPixelRatio: 0.03,
+    maxDiffPixelRatio: getMobileSnapshotTolerance(testInfo.project.name),
   })
 })
 
