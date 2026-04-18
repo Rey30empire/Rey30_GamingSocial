@@ -34,6 +34,7 @@ jobs:
       DIRECT_URL: postgresql://rey30:rey30@localhost:5432/rey30verse?schema=public
       NEXTAUTH_SECRET: rey30verse-ci-secret
       REY30_DISABLE_AUTH: 'true'
+      REY30_DATABASE_SCHEMA: public
       REY30_ENABLE_RUNTIME_SEED: 'true'
       REY30_PREVIEW_MODE: 'false'
 
