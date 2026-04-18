@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS "rey30verse"."CardDeckProfile" (
+CREATE TABLE IF NOT EXISTS "CardDeckProfile" (
   "id" TEXT NOT NULL,
   "userId" TEXT NOT NULL,
   "deckKey" TEXT NOT NULL,
@@ -11,24 +11,24 @@ CREATE TABLE IF NOT EXISTS "rey30verse"."CardDeckProfile" (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS "CardDeckProfile_userId_deckKey_key"
-  ON "rey30verse"."CardDeckProfile"("userId", "deckKey");
+  ON "CardDeckProfile"("userId", "deckKey");
 
 CREATE INDEX IF NOT EXISTS "CardDeckProfile_userId_isActive_idx"
-  ON "rey30verse"."CardDeckProfile"("userId", "isActive");
+  ON "CardDeckProfile"("userId", "isActive");
 
 DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'CardDeckProfile_userId_fkey'
   ) THEN
-    ALTER TABLE "rey30verse"."CardDeckProfile"
+    ALTER TABLE "CardDeckProfile"
       ADD CONSTRAINT "CardDeckProfile_userId_fkey"
-      FOREIGN KEY ("userId") REFERENCES "rey30verse"."User"("id")
+      FOREIGN KEY ("userId") REFERENCES "User"("id")
       ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
 END $$;
 
-INSERT INTO "rey30verse"."CardDeckProfile" ("id", "userId", "deckKey", "name", "isDefault", "isActive", "createdAt", "updatedAt")
+INSERT INTO "CardDeckProfile" ("id", "userId", "deckKey", "name", "isDefault", "isActive", "createdAt", "updatedAt")
 SELECT
   CONCAT('default-card-deck-', "id"),
   "id",
@@ -38,5 +38,5 @@ SELECT
   true,
   CURRENT_TIMESTAMP,
   CURRENT_TIMESTAMP
-FROM "rey30verse"."User"
+FROM "User"
 ON CONFLICT ("userId", "deckKey") DO NOTHING;
