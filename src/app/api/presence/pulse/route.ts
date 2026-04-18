@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { touchCurrentUserPresence } from '@/lib/app-data'
 import { createApiErrorResponse } from '@/lib/api-errors'
+import { getPreviewPresence } from '@/lib/preview-data'
 import { publishRealtimeEvent } from '@/lib/realtime'
+import { isPreviewModeEnabled } from '@/lib/runtime-config'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,6 +17,26 @@ export async function POST(request: NextRequest) {
         : 'online'
     const screen = typeof body?.screen === 'string' ? body.screen : null
     const latencyMs = Number.isFinite(body?.latencyMs) ? Math.max(0, Math.round(Number(body.latencyMs))) : null
+
+    if (isPreviewModeEnabled()) {
+      const presence = getPreviewPresence({
+        state,
+        screen,
+        latencyMs,
+      })
+
+      publishRealtimeEvent({
+        type: 'presence-updated',
+        screen: presence.currentScreen ?? undefined,
+        onlineUsers: presence.onlineUsersCount,
+        note: presence.label,
+      })
+
+      return NextResponse.json({
+        ok: true,
+        presence,
+      })
+    }
 
     const presence = await touchCurrentUserPresence({
       state,

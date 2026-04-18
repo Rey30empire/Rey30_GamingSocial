@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'codex/**'
+  pull_request:
+
+jobs:
+  validate:
+    name: Lint, tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: rey30verse
+          POSTGRES_PASSWORD: rey30
+          POSTGRES_USER: rey30
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rey30 -d rey30verse"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://rey30:rey30@localhost:5432/rey30verse?schema=public
+      DIRECT_URL: postgresql://rey30:rey30@localhost:5432/rey30verse?schema=public
+      NEXTAUTH_SECRET: rey30verse-ci-secret
+      REY30_DISABLE_AUTH: 'true'
+      REY30_ENABLE_RUNTIME_SEED: 'true'
+      REY30_PREVIEW_MODE: 'false'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare database
+        run: npm run db:bootstrap
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Unit and API tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build

@@ -3,12 +3,21 @@
 import { signOut } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import { startTransition, useEffect, useRef, useState } from 'react'
-import type { AppSnapshot } from '@/lib/app-types'
+import type {
+  AppSnapshot,
+  CardCustomizationSnapshot,
+  ChatSnapshot,
+  LiveSnapshot,
+  LobbySnapshot,
+  MarketplaceSnapshot,
+  ShellSnapshot,
+} from '@/lib/app-types'
 import { cn } from '@/lib/utils'
 import { Navigation } from '@/components/rey30/navigation'
 import { DashboardShowcase } from '@/components/rey30/dashboard-showcase'
 import { ChatSystem } from '@/components/rey30/chat-system'
 import { GameLobby } from '@/components/rey30/game-lobby'
+import { SocialFeed } from '@/components/rey30/social-feed'
 import { CardGame } from '@/components/rey30/card-game'
 import { SnakeRoom } from '@/components/rey30/snake-room'
 import { Marketplace } from '@/components/rey30/marketplace'
@@ -39,6 +48,12 @@ import {
 type SectionId = 'home' | 'chat' | 'games' | 'live' | 'market' | 'customize' | 'profile'
 type ConnectionState = 'connecting' | 'connected' | 'syncing' | 'reconnecting' | 'offline'
 type GameExperience = 'cards' | 'snake'
+type RefreshScope = 'bootstrap' | 'shell' | 'chat' | 'lobby' | 'live' | 'market' | 'customize'
+
+interface HomePageShellProps {
+  authBypassed?: boolean
+  previewMode?: boolean
+}
 
 const sectionMeta: Record<SectionId, { title: string; subtitle: string }> = {
   home: {
@@ -71,7 +86,18 @@ const sectionMeta: Record<SectionId, { title: string; subtitle: string }> = {
   },
 }
 
-export default function HomePageShell() {
+function formatSyncTime() {
+  return new Date().toLocaleTimeString('es-ES', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatOnlineUsers(value: number) {
+  return new Intl.NumberFormat('es-ES').format(value)
+}
+
+export default function HomePageShell({ authBypassed = false, previewMode = false }: HomePageShellProps) {
   const [activeTab, setActiveTab] = useState<SectionId>('home')
   const [showGame, setShowGame] = useState(false)
   const [activeGameRoomId, setActiveGameRoomId] = useState<string | null>(null)
@@ -87,11 +113,13 @@ export default function HomePageShell() {
   const activeTabRef = useRef<SectionId>('home')
   const appDataRef = useRef<AppSnapshot | null>(null)
   const latencyRef = useRef<number | null>(null)
-  const refreshTimeoutRef = useRef<number | null>(null)
+  const refreshTimeoutRef = useRef<Partial<Record<RefreshScope, number>>>({})
   const eventSourceRef = useRef<EventSource | null>(null)
   const pulseIntervalRef = useRef<number | null>(null)
   const isSigningOutRef = useRef(false)
+  const hasQueuedLoginRedirectRef = useRef(false)
   const hasHandledDeepLinkRef = useRef(false)
+  const hasActivatedTabRefreshRef = useRef(false)
 
   appDataRef.current = appData
   activeTabRef.current = activeTab
@@ -136,6 +164,39 @@ export default function HomePageShell() {
     }
   }, [searchParams])
 
+  const markSyncComplete = () => {
+    setLastSyncAt(formatSyncTime())
+  }
+
+  const redirectToLogin = (reason = 'Sesion requerida.') => {
+    if (authBypassed || previewMode || hasQueuedLoginRedirectRef.current) {
+      return
+    }
+
+    hasQueuedLoginRedirectRef.current = true
+    isSigningOutRef.current = true
+    setError(reason)
+    setConnectionState('offline')
+
+    Object.values(refreshTimeoutRef.current).forEach((timeoutId) => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId)
+      }
+    })
+    refreshTimeoutRef.current = {}
+
+    if (pulseIntervalRef.current) {
+      window.clearInterval(pulseIntervalRef.current)
+      pulseIntervalRef.current = null
+    }
+
+    eventSourceRef.current?.close()
+    eventSourceRef.current = null
+
+    const callbackUrl = `${window.location.pathname}${window.location.search}`
+    window.location.replace(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`)
+  }
+
   const loadAppData = async (reason = 'manual') => {
     const hasSnapshot = Boolean(appDataRef.current)
 
@@ -151,6 +212,12 @@ export default function HomePageShell() {
 
     try {
       const response = await fetch('/api/bootstrap', { cache: 'no-store' })
+
+      if (response.status === 401) {
+        redirectToLogin('Tu sesion expiro. Redirigiendo al login.')
+        return
+      }
+
       const payload = await response.json()
 
       if (!response.ok) {
@@ -159,12 +226,7 @@ export default function HomePageShell() {
 
       startTransition(() => {
         setAppData(payload as AppSnapshot)
-        setLastSyncAt(
-          new Date().toLocaleTimeString('es-ES', {
-            hour: '2-digit',
-            minute: '2-digit',
-          })
-        )
+        markSyncComplete()
       })
       setConnectionState('connected')
     } catch (caughtError) {
@@ -176,48 +238,263 @@ export default function HomePageShell() {
     }
   }
 
+  const loadScopedSnapshot = async <TSnapshot,>(
+    scope: Exclude<RefreshScope, 'bootstrap'>,
+    endpoint: string,
+    applySnapshot: (current: AppSnapshot, snapshot: TSnapshot) => AppSnapshot
+  ) => {
+    if (!appDataRef.current) {
+      await loadAppData(`${scope}-fallback`)
+      return
+    }
+
+    setIsSyncing(true)
+    setConnectionState('syncing')
+    setError(null)
+
+    try {
+      const response = await fetch(endpoint, { cache: 'no-store' })
+
+      if (response.status === 401) {
+        redirectToLogin('Tu sesion expiro. Redirigiendo al login.')
+        return
+      }
+
+      const payload = await response.json()
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'No se pudo sincronizar el modulo.')
+      }
+
+      startTransition(() => {
+        setAppData((current) => (current ? applySnapshot(current, payload as TSnapshot) : current))
+        markSyncComplete()
+      })
+      setConnectionState('connected')
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'No se pudo sincronizar el modulo.')
+      setConnectionState('reconnecting')
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
+  const loadShellData = async (reason = 'shell') => {
+    void reason
+
+    await loadScopedSnapshot<ShellSnapshot>('shell', '/api/shell/state', (current, payload) => ({
+      ...current,
+      ...payload,
+    }))
+  }
+
+  const loadChatData = async (reason = 'chat') => {
+    void reason
+
+    await loadScopedSnapshot<ChatSnapshot>('chat', '/api/chat/messages', (current, payload) => ({
+      ...current,
+      chat: payload,
+    }))
+  }
+
+  const loadLobbyData = async (reason = 'lobby') => {
+    void reason
+
+    await loadScopedSnapshot<LobbySnapshot>('lobby', '/api/rooms', (current, payload) => ({
+      ...current,
+      lobby: payload,
+    }))
+  }
+
+  const loadLiveData = async (reason = 'live') => {
+    void reason
+
+    await loadScopedSnapshot<LiveSnapshot>('live', '/api/live/state', (current, payload) => ({
+      ...current,
+      live: payload,
+    }))
+  }
+
+  const loadMarketData = async (reason = 'market') => {
+    void reason
+
+    await loadScopedSnapshot<MarketplaceSnapshot>('market', '/api/market/state', (current, payload) => ({
+      ...current,
+      market: payload,
+    }))
+  }
+
+  const loadCustomizeData = async (reason = 'customize') => {
+    void reason
+
+    await loadScopedSnapshot<CardCustomizationSnapshot>('customize', '/api/customize/state', (current, payload) => ({
+      ...current,
+      customize: payload,
+    }))
+  }
+
   useEffect(() => {
     void loadAppData('bootstrap')
   }, [])
 
   useEffect(() => {
-    const queueRefresh = (reason = 'realtime') => {
-      if (refreshTimeoutRef.current) {
+    if (!hasActivatedTabRefreshRef.current) {
+      hasActivatedTabRefreshRef.current = true
+      return
+    }
+
+    if (!appDataRef.current) {
+      return
+    }
+
+    if (activeTab === 'home' || activeTab === 'profile') {
+      void loadShellData(`tab-${activeTab}`)
+      return
+    }
+
+    if (activeTab === 'chat') {
+      void loadChatData('tab-chat')
+      return
+    }
+
+    if (activeTab === 'games' && !showGame) {
+      void loadLobbyData('tab-games')
+      return
+    }
+
+    if (activeTab === 'live') {
+      void loadLiveData('tab-live')
+      return
+    }
+
+    if (activeTab === 'market') {
+      void loadMarketData('tab-market')
+      return
+    }
+
+    if (activeTab === 'customize') {
+      void loadCustomizeData('tab-customize')
+    }
+  }, [activeTab, showGame])
+
+  useEffect(() => {
+    const queueRefresh = (scope: RefreshScope, reason = 'realtime') => {
+      if (refreshTimeoutRef.current[scope]) {
         return
       }
 
-      refreshTimeoutRef.current = window.setTimeout(() => {
-        refreshTimeoutRef.current = null
-        void loadAppData(reason)
+      refreshTimeoutRef.current[scope] = window.setTimeout(() => {
+        delete refreshTimeoutRef.current[scope]
+        if (scope === 'bootstrap') {
+          void loadAppData(reason)
+          return
+        }
+
+        if (scope === 'shell') {
+          void loadShellData(reason)
+          return
+        }
+
+        if (scope === 'chat') {
+          void loadChatData(reason)
+          return
+        }
+
+        if (scope === 'lobby') {
+          void loadLobbyData(reason)
+          return
+        }
+
+        if (scope === 'live') {
+          void loadLiveData(reason)
+          return
+        }
+
+        if (scope === 'market') {
+          void loadMarketData(reason)
+          return
+        }
+
+        void loadCustomizeData(reason)
       }, 180)
     }
 
     const eventSource = new EventSource('/api/realtime/stream')
     eventSourceRef.current = eventSource
 
-    const handleRealtimeEvent = () => {
-      queueRefresh('realtime-event')
+    const handlePresenceEvent = (event: MessageEvent<string>) => {
+      try {
+        const payload = JSON.parse(event.data) as { note?: string; onlineUsers?: number; screen?: string }
+
+        startTransition(() => {
+          setAppData((current) =>
+            current
+              ? {
+                  ...current,
+                  presence: {
+                    ...current.presence,
+                    label: payload.note ?? current.presence.label,
+                    onlineUsers:
+                      typeof payload.onlineUsers === 'number'
+                        ? formatOnlineUsers(payload.onlineUsers)
+                        : current.presence.onlineUsers,
+                    currentScreen: payload.screen ?? current.presence.currentScreen,
+                  },
+                }
+              : current
+          )
+        })
+      } catch {
+        // Ignore malformed SSE payloads.
+      }
     }
 
     eventSource.addEventListener('connected', () => {
       setConnectionState('connected')
     })
-    eventSource.addEventListener('message-created', handleRealtimeEvent)
-    eventSource.addEventListener('room-created', handleRealtimeEvent)
-    eventSource.addEventListener('presence-updated', handleRealtimeEvent)
-    eventSource.addEventListener('match-updated', handleRealtimeEvent)
-    eventSource.addEventListener('stream-updated', handleRealtimeEvent)
-    eventSource.addEventListener('inventory-updated', handleRealtimeEvent)
-    eventSource.addEventListener('customize-updated', handleRealtimeEvent)
+    eventSource.addEventListener('message-created', () => {
+      queueRefresh(activeTabRef.current === 'home' ? 'shell' : 'chat', 'message-created')
+    })
+    eventSource.addEventListener('room-created', () => {
+      queueRefresh(activeTabRef.current === 'home' ? 'shell' : 'lobby', 'room-created')
+    })
+    eventSource.addEventListener('room-updated', () => {
+      queueRefresh(activeTabRef.current === 'home' ? 'shell' : 'lobby', 'room-updated')
+    })
+    eventSource.addEventListener('presence-updated', handlePresenceEvent)
+    eventSource.addEventListener('match-updated', () => {
+      queueRefresh(activeTabRef.current === 'home' ? 'shell' : 'lobby', 'match-updated')
+    })
+    eventSource.addEventListener('stream-updated', () => {
+      queueRefresh(activeTabRef.current === 'home' ? 'shell' : 'live', 'stream-updated')
+    })
+    eventSource.addEventListener('inventory-updated', () => {
+      if (activeTabRef.current === 'live') {
+        queueRefresh('live', 'inventory-updated-live')
+        return
+      }
+
+      if (activeTabRef.current === 'customize') {
+        queueRefresh('customize', 'inventory-updated-customize')
+        return
+      }
+
+      queueRefresh('market', 'inventory-updated-market')
+    })
+    eventSource.addEventListener('customize-updated', () => {
+      queueRefresh(activeTabRef.current === 'home' ? 'shell' : 'customize', 'customize-updated')
+    })
     eventSource.onerror = () => {
       setConnectionState((current) => (current === 'offline' ? 'offline' : 'reconnecting'))
     }
 
     return () => {
-      if (refreshTimeoutRef.current) {
-        window.clearTimeout(refreshTimeoutRef.current)
-        refreshTimeoutRef.current = null
-      }
+      Object.values(refreshTimeoutRef.current).forEach((timeoutId) => {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId)
+        }
+      })
+      refreshTimeoutRef.current = {}
 
       eventSource.close()
       if (eventSourceRef.current === eventSource) {
@@ -237,7 +514,7 @@ export default function HomePageShell() {
       const startedAt = performance.now()
 
       try {
-        await fetch('/api/presence/pulse', {
+        const response = await fetch('/api/presence/pulse', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -250,6 +527,13 @@ export default function HomePageShell() {
             latencyMs: latencyRef.current,
           }),
         })
+
+        if (response.status === 401) {
+          if (!isDisposed) {
+            redirectToLogin('Tu sesion expiro. Redirigiendo al login.')
+          }
+          return
+        }
 
         if (isDisposed) {
           return
@@ -304,6 +588,11 @@ export default function HomePageShell() {
   }, [])
 
   const handleSignOut = async () => {
+    if (authBypassed) {
+      window.location.href = '/'
+      return
+    }
+
     if (isSigningOutRef.current) {
       return
     }
@@ -312,8 +601,12 @@ export default function HomePageShell() {
     setConnectionState('offline')
 
     if (refreshTimeoutRef.current) {
-      window.clearTimeout(refreshTimeoutRef.current)
-      refreshTimeoutRef.current = null
+      Object.values(refreshTimeoutRef.current).forEach((timeoutId) => {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId)
+        }
+      })
+      refreshTimeoutRef.current = {}
     }
 
     if (pulseIntervalRef.current) {
@@ -412,11 +705,16 @@ export default function HomePageShell() {
     }
 
     if (activeTab === 'home') {
-      return <DashboardShowcase data={appData.dashboard} onNavigate={navigateTo} onOpenGame={openTable} />
+      return (
+        <div className="space-y-6">
+          <DashboardShowcase data={appData.dashboard} onNavigate={navigateTo} onOpenGame={openTable} />
+          <SocialFeed />
+        </div>
+      )
     }
 
     if (activeTab === 'chat') {
-      return <ChatSystem data={appData.chat} onRefresh={loadAppData} />
+      return <ChatSystem data={appData.chat} onRefresh={loadChatData} />
     }
 
     if (activeTab === 'games') {
@@ -450,7 +748,7 @@ export default function HomePageShell() {
         <div className="space-y-6">
           <GameLobby
             data={appData.lobby}
-            onRefresh={loadAppData}
+            onRefresh={loadLobbyData}
             onEnterRoom={openTable}
             onEnterSnakeArcade={openSnakeArcade}
           />
@@ -532,6 +830,7 @@ export default function HomePageShell() {
         activeTab={activeTab}
         setActiveTab={navigateTo}
         onSignOut={handleSignOut}
+        showSignOut={!authBypassed}
         currentUser={appData?.currentUser}
         activity={navigationBadges}
       />
@@ -563,11 +862,11 @@ export default function HomePageShell() {
                             : 'text-emerald-300'
                     )}
                   />
-                  {connectionMeta.label}
+                  {previewMode ? 'Preview' : connectionMeta.label}
                 </Badge>
                 <Badge className="rounded-full border border-violet-400/15 bg-white/[0.04] px-3 py-2 text-[0.72rem] text-zinc-300">
                   <Activity className="mr-1.5 h-3.5 w-3.5 text-cyan-300" />
-                  {connectionMeta.detail}
+                  {previewMode ? 'Vista navegable sin DB real para revisar el estado actual.' : connectionMeta.detail}
                 </Badge>
                 <Button
                   variant="outline"
@@ -600,14 +899,16 @@ export default function HomePageShell() {
                 >
                   <Bell className="h-5 w-5" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => void handleSignOut()}
-                  className="rounded-full bg-white/[0.04] text-zinc-400 hover:bg-white/[0.06] hover:text-white"
-                >
-                  <LogOut className="h-5 w-5" />
-                </Button>
+                {!authBypassed ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => void handleSignOut()}
+                    className="rounded-full bg-white/[0.04] text-zinc-400 hover:bg-white/[0.06] hover:text-white"
+                  >
+                    <LogOut className="h-5 w-5" />
+                  </Button>
+                ) : null}
                 <Button
                   variant="ghost"
                   size="icon"

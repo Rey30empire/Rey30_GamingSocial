@@ -1,6 +1,6 @@
-import { GameMatchStatus, RoomType } from '@prisma/client'
-import { requireAuthSession } from '@/lib/auth'
-import type { GameSnapshot } from '@/lib/app-types'
+import { GameMatchStatus, RoomType, RoomVisibility } from '@prisma/client'
+import { AuthRequiredError, requireAuthSession } from '@/lib/auth'
+import type { ChatMessageSnapshot, GameSnapshot } from '@/lib/app-types'
 import { db } from '@/lib/db'
 
 const HAND_SIZE = 13
@@ -79,6 +79,15 @@ interface MatchMutationResult {
   summary: string
 }
 
+type GameControlAction =
+  | 'toggle-voice'
+  | 'toggle-sound'
+  | 'toggle-chat'
+  | 'toggle-dark-mode'
+  | 'set-table-zoom'
+  | 'set-card-scale'
+  | 'reset-round'
+
 const defaultSettings: GameSettingsState = {
   voiceEnabled: true,
   soundEnabled: true,
@@ -138,6 +147,10 @@ function parseSettings(payload: string): GameSettingsState {
   }
 }
 
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, Math.round(value)))
+}
+
 function cardLabel(rank: number) {
   if (rank === 14) return 'A'
   if (rank === 13) return 'K'
@@ -155,6 +168,13 @@ function formatCard(card: GameCardState) {
   }[card.suit]
 
   return `${card.label}${suitIcon}`
+}
+
+function formatEventClock(date: Date) {
+  return new Intl.DateTimeFormat('es-ES', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 
 function hashString(value: string) {
@@ -329,7 +349,7 @@ async function getCurrentUserRecord() {
   })
 
   if (!user) {
-    throw new Error('No se encontro el jugador autenticado para la mesa.')
+    throw new AuthRequiredError()
   }
 
   return user
@@ -340,6 +360,14 @@ async function getGameRoomRecord(roomId?: string) {
     const room = await db.room.findUnique({
       where: { id: roomId },
       include: {
+        messages: {
+          include: {
+            user: true,
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
         memberships: {
           include: {
             user: true,
@@ -367,6 +395,14 @@ async function getGameRoomRecord(roomId?: string) {
       type: RoomType.GAME,
     },
     include: {
+      messages: {
+        include: {
+          user: true,
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+      },
       memberships: {
         include: {
           user: true,
@@ -389,15 +425,16 @@ async function getGameRoomRecord(roomId?: string) {
   return room
 }
 
-async function ensureCurrentUserMembership(roomId?: string) {
-  if (!roomId) {
-    return
-  }
+function normalizeInviteCode(value: string) {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
+}
 
-  const [currentUser, room] = await Promise.all([getCurrentUserRecord(), getGameRoomRecord(roomId)])
-
+async function addCurrentUserMembershipToRoom(
+  room: Awaited<ReturnType<typeof getGameRoomRecord>>,
+  currentUser: Awaited<ReturnType<typeof getCurrentUserRecord>>
+) {
   if (room.memberships.some((membership) => membership.userId === currentUser.id)) {
-    return
+    return room
   }
 
   if (room.currentPlayers >= room.maxPlayers) {
@@ -405,7 +442,7 @@ async function ensureCurrentUserMembership(roomId?: string) {
   }
 
   const usedSeats = new Set(room.memberships.map((membership) => membership.seatOrder))
-  const nextSeat = [0, 1, 2, 3].find((seat) => !usedSeats.has(seat))
+  const nextSeat = Array.from({ length: room.maxPlayers }, (_, seat) => seat).find((seat) => !usedSeats.has(seat))
 
   if (nextSeat === undefined) {
     throw new Error('No se encontro un asiento libre para entrar a la mesa.')
@@ -416,8 +453,9 @@ async function ensureCurrentUserMembership(roomId?: string) {
       data: {
         roomId: room.id,
         userId: currentUser.id,
+        isHost: room.hostUserId === currentUser.id,
         seatOrder: nextSeat,
-        seatLabel: 'Jugador',
+        seatLabel: room.hostUserId === currentUser.id ? 'Host' : 'Jugador',
       },
     }),
     db.room.update({
@@ -443,6 +481,26 @@ async function ensureCurrentUserMembership(roomId?: string) {
       },
     }),
   ])
+
+  return getGameRoomRecord(room.id)
+}
+
+async function ensureCurrentUserMembership(roomId?: string) {
+  if (!roomId) {
+    return
+  }
+
+  const [currentUser, room] = await Promise.all([getCurrentUserRecord(), getGameRoomRecord(roomId)])
+
+  if (room.memberships.some((membership) => membership.userId === currentUser.id)) {
+    return
+  }
+
+  if (room.visibility === RoomVisibility.PRIVATE) {
+    throw new Error('Necesitas unirte con el codigo privado para entrar a esta sala.')
+  }
+
+  await addCurrentUserMembershipToRoom(room, currentUser)
 
   const existingMatch = await db.gameMatch.findUnique({
     where: {
@@ -480,6 +538,63 @@ async function ensureCurrentUserMembership(roomId?: string) {
     eventType: 'PLAYER_JOINED',
     summary,
   })
+}
+
+export async function joinCurrentUserToRoomByInviteCode(inviteCode: string) {
+  const normalizedInviteCode = normalizeInviteCode(inviteCode)
+
+  if (normalizedInviteCode.length < 6) {
+    throw new Error('Ingresa un codigo valido de 6 caracteres.')
+  }
+
+  const [currentUser, room] = await Promise.all([
+    getCurrentUserRecord(),
+    db.room.findFirst({
+      where: {
+        inviteCode: normalizedInviteCode,
+        type: RoomType.GAME,
+      },
+      include: {
+        messages: {
+          include: {
+            user: true,
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+        memberships: {
+          include: {
+            user: true,
+          },
+          orderBy: {
+            seatOrder: 'asc',
+          },
+        },
+      },
+    }),
+  ])
+
+  if (!room) {
+    throw new Error('No existe ninguna sala privada con ese codigo.')
+  }
+
+  if (room.visibility !== RoomVisibility.PRIVATE) {
+    throw new Error('Ese codigo no pertenece a una sala privada.')
+  }
+
+  const alreadyMember = room.memberships.some((membership) => membership.userId === currentUser.id)
+
+  if (!alreadyMember) {
+    await addCurrentUserMembershipToRoom(room, currentUser)
+  }
+
+  return {
+    roomId: room.id,
+    roomName: room.name,
+    inviteCode: normalizedInviteCode,
+    alreadyMember,
+  }
 }
 
 function buildSeatBlueprints(
@@ -697,6 +812,61 @@ function resolveTurnState(params: {
     lastWinnerSeat: null as number | null,
     summary: '',
   }
+}
+
+function buildRuleHint(params: {
+  mySeat?: GameSeatState
+  currentTurn?: GameSeatState
+  match: Awaited<ReturnType<typeof db.gameMatch.findUnique>>
+  state: GameEngineState
+}) {
+  if (params.match?.status === GameMatchStatus.FINISHED) {
+    return 'La ronda termino. Revisa el resultado y abre la siguiente mano cuando la mesa este lista.'
+  }
+
+  if (!params.mySeat) {
+    return 'Tu perfil no esta sentado en esta mesa todavia.'
+  }
+
+  if (params.currentTurn?.seat !== params.mySeat.seat) {
+    return `Espera el turno de ${params.currentTurn?.displayName ?? 'la mesa'}.`
+  }
+
+  if (params.match?.trickNumber === 1 && params.state.tableCards.length === 0) {
+    const openingCard = params.mySeat.cards.find((card) => card.id === OPENING_CARD_ID)
+
+    if (openingCard) {
+      return `Debes abrir la ronda con ${formatCard(openingCard)}.`
+    }
+  }
+
+  if (params.match?.leadSuit) {
+    const sameSuitCards = params.mySeat.cards.filter((card) => card.suit === params.match?.leadSuit)
+
+    if (sameSuitCards.length) {
+      return `Debes seguir el palo lider: ${formatCard(sameSuitCards[0]).slice(-1)}.`
+    }
+
+    if (params.match?.trickNumber === 1) {
+      const safeDiscards = params.mySeat.cards.filter((card) => !isPenaltyCard(card))
+
+      if (safeDiscards.length) {
+        return 'Primera baza: evita soltar corazones o la Q♠ mientras tengas otra salida.'
+      }
+    }
+
+    return 'No tienes el palo lider, asi que puedes descargar libremente.'
+  }
+
+  if (!params.match?.crownsReleased) {
+    const nonCrowns = params.mySeat.cards.filter((card) => card.suit !== 'crowns')
+
+    if (nonCrowns.length) {
+      return 'Los corazones siguen bloqueados hasta que alguien los rompa.'
+    }
+  }
+
+  return 'Puedes jugar cualquiera de tus cartas legales.'
 }
 
 function applyCardPlay(params: {
@@ -976,8 +1146,30 @@ export async function getGameSnapshot(roomId?: string): Promise<GameSnapshot> {
 
   const mySeat = state.seats.find((seat) => seat.userId === currentUser.id)
   const currentTurn = state.seats.find((seat) => seat.seat === match.turnSeat)
+  const playableCardIds =
+    mySeat && currentTurn?.seat === mySeat.seat && match.status !== GameMatchStatus.FINISHED
+      ? getLegalCards(mySeat, {
+          leadSuit: match.leadSuit,
+          crownsReleased: match.crownsReleased,
+          trickNumber: match.trickNumber,
+          cardsOnTable: state.tableCards.length,
+        }).map((card) => card.id)
+      : []
+  const tableMessages: ChatMessageSnapshot[] = room.messages.slice(-10).map((message) => ({
+    id: message.id,
+    roomId: room.id,
+    user: {
+      name: message.userId === currentUser.id ? 'Yo' : message.user.name,
+      avatar: message.user.avatarSeed,
+      isMe: message.userId === currentUser.id,
+    },
+    content: message.content,
+    timestamp: formatEventClock(message.createdAt),
+  }))
 
   return {
+    tableMode: 'classic-hearts',
+    tableModeLabel: 'Mesa clasica',
     matchId: match.id,
     roomId: room.id,
     roomName: room.name,
@@ -997,6 +1189,12 @@ export async function getGameSnapshot(roomId?: string): Promise<GameSnapshot> {
         ? 'Ronda terminada'
         : `Turno de ${currentTurn?.displayName ?? 'la mesa'}`,
     summary: match.lastActionSummary ?? 'Mesa sincronizada.',
+    ruleHint: buildRuleHint({
+      mySeat,
+      currentTurn,
+      match,
+      state,
+    }),
     hand:
       mySeat?.cards.map((card) => ({
         id: card.id,
@@ -1004,6 +1202,7 @@ export async function getGameSnapshot(roomId?: string): Promise<GameSnapshot> {
         rank: card.rank,
         label: card.label,
       })) ?? [],
+    playableCardIds,
     tableCards: state.tableCards.map((entry) => ({
       seat: entry.seat,
       playerName: entry.displayName,
@@ -1014,6 +1213,7 @@ export async function getGameSnapshot(roomId?: string): Promise<GameSnapshot> {
         label: entry.card.label,
       },
     })),
+    tableMessages,
     seats: state.seats
       .map((seat) => ({
         seat: seat.seat,
@@ -1029,8 +1229,12 @@ export async function getGameSnapshot(roomId?: string): Promise<GameSnapshot> {
         isTurn: seat.seat === match.turnSeat && match.status !== GameMatchStatus.FINISHED,
         position: SEAT_POSITIONS[seat.seat] ?? 'bottom',
         statusLabel:
-          seat.seat === match.turnSeat && match.status !== GameMatchStatus.FINISHED
-            ? 'Tu turno'
+          !seat.connected
+            ? 'Desconectado'
+            : seat.seat === match.turnSeat && match.status !== GameMatchStatus.FINISHED
+              ? seat.userId === currentUser.id
+                ? 'Tu turno'
+                : 'En turno'
             : `${seat.tricksWon} bazas • ${seat.roundPoints} pts`,
       }))
       .sort(seatSort),
@@ -1048,10 +1252,7 @@ export async function getGameSnapshot(roomId?: string): Promise<GameSnapshot> {
       id: event.id,
       type: event.eventType,
       summary: event.summary,
-      createdAt: new Intl.DateTimeFormat('es-ES', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(event.createdAt),
+      createdAt: formatEventClock(event.createdAt),
     })),
     controls: settings,
   }
@@ -1130,7 +1331,8 @@ export async function playCurrentUserCard(roomId: string, cardId: string): Promi
 
 export async function updateGameControl(params: {
   roomId: string
-  action: 'toggle-voice' | 'toggle-sound' | 'toggle-chat' | 'toggle-dark-mode' | 'reset-round'
+  action: GameControlAction
+  value?: number
 }) {
   const { room, match } = await getReadyMatch(params.roomId)
   let settings = parseSettings(match.settingsPayload)
@@ -1168,6 +1370,18 @@ export async function updateGameControl(params: {
       darkMode: !settings.darkMode,
     }
     summary = settings.darkMode ? 'Modo oscuro de mesa activo.' : 'Modo claro experimental activo.'
+  } else if (params.action === 'set-table-zoom') {
+    settings = {
+      ...settings,
+      tableZoom: clampNumber(params.value ?? settings.tableZoom, 60, 110),
+    }
+    summary = `Zoom de mesa ajustado a ${settings.tableZoom}%.`
+  } else if (params.action === 'set-card-scale') {
+    settings = {
+      ...settings,
+      cardScale: clampNumber(params.value ?? settings.cardScale, 50, 110),
+    }
+    summary = `Escala de cartas ajustada a ${settings.cardScale}%.`
   } else if (params.action === 'reset-round') {
     const nextRound = createRoundState(room, match.roundNumber + 1, state.seats)
     state = nextRound.state

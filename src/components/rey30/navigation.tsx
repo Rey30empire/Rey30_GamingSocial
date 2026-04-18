@@ -64,6 +64,7 @@ interface NavigationProps {
   activeTab: string
   setActiveTab: (tab: string) => void
   onSignOut: () => Promise<void> | void
+  showSignOut?: boolean
   currentUser?: CurrentUserSnapshot
   activity?: {
     chatBadge?: string
@@ -74,7 +75,14 @@ interface NavigationProps {
   }
 }
 
-export function Navigation({ activeTab, setActiveTab, onSignOut, currentUser, activity }: NavigationProps) {
+export function Navigation({
+  activeTab,
+  setActiveTab,
+  onSignOut,
+  showSignOut = true,
+  currentUser,
+  activity,
+}: NavigationProps) {
   const navItems = [
     { id: 'home', icon: <Home className="h-5 w-5" />, label: 'Inicio', badge: 'Hub' },
     { id: 'chat', icon: <MessageCircle className="h-5 w-5" />, label: 'Chats', badge: activity?.chatBadge ?? '5' },
@@ -138,14 +146,16 @@ export function Navigation({ activeTab, setActiveTab, onSignOut, currentUser, ac
                 Nivel {currentUser?.level ?? 42} • {activity?.currentStatus ?? 'Online ahora'}
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => void onSignOut()}
-              className="rounded-full text-zinc-400 hover:bg-white/[0.06] hover:text-white"
-            >
-              <LogOut className="h-4 w-4" />
-            </Button>
+            {showSignOut ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => void onSignOut()}
+                className="rounded-full text-zinc-400 hover:bg-white/[0.06] hover:text-white"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            ) : null}
           </div>
 
           <div className="mt-4 grid grid-cols-3 gap-2">

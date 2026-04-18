@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGameSnapshot } from '@/lib/game-core'
+import { getGameSnapshotByMode } from '@/lib/game-runtime'
 import { createApiErrorResponse } from '@/lib/api-errors'
+import { getPreviewGameSnapshot } from '@/lib/preview-data'
+import { isPreviewModeEnabled } from '@/lib/runtime-config'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
-    const roomId = request.nextUrl.searchParams.get('roomId') ?? undefined
-    const snapshot = await getGameSnapshot(roomId)
+    const requestUrl = new URL(request.url)
+    const roomId = requestUrl.searchParams.get('roomId') ?? undefined
+
+    if (isPreviewModeEnabled()) {
+      return NextResponse.json(getPreviewGameSnapshot(roomId))
+    }
+
+    const snapshot = await getGameSnapshotByMode(roomId)
     return NextResponse.json(snapshot)
   } catch (error) {
     return createApiErrorResponse(error, 'No se pudo cargar la mesa.')

@@ -340,6 +340,7 @@ export function Marketplace({ data }: MarketplaceProps) {
     snapshot.inventory.filter((entry) => entry.type === 'deck' && entry.quantity > 0).map((entry) => entry.image)
   )
   const featuredItem = snapshot.items.find((item) => item.image === 'cosmic') ?? snapshot.items[0]
+  const equippedItems = snapshot.inventory.filter((entry) => entry.equipped)
 
   return (
     <div className="space-y-6">
@@ -361,6 +362,12 @@ export function Marketplace({ data }: MarketplaceProps) {
             <Diamond className="mr-2 inline h-4 w-4 text-cyan-300" />
             {snapshot.gems}
           </div>
+          {equippedItems.map((item) => (
+            <Badge key={item.id} className="border-0 bg-violet-500/15 text-violet-100">
+              <Check className="mr-1 h-3 w-3" />
+              {item.name}
+            </Badge>
+          ))}
         </div>
       </div>
 
@@ -461,6 +468,7 @@ export function Marketplace({ data }: MarketplaceProps) {
               ['deck', 'Barajas'],
               ['gift', 'Gifts'],
               ['badge', 'Badges'],
+              ['theme', 'Themes'],
             ].map(([id, label]) => (
               <TabsTrigger
                 key={id}
@@ -516,16 +524,29 @@ export function Marketplace({ data }: MarketplaceProps) {
           <div>
             <p className="text-sm uppercase tracking-[0.28em] text-zinc-500">Catalogo</p>
             <h3 className="mt-2 text-2xl font-semibold text-white">
-              {activeTab === 'all' ? 'Todos los productos' : activeTab === 'deck' ? 'Barajas premium' : activeTab === 'gift' ? 'Gifts consumibles' : 'Badges y extras'}
+              {activeTab === 'all'
+                ? 'Todos los productos'
+                : activeTab === 'deck'
+                  ? 'Barajas premium'
+                  : activeTab === 'gift'
+                    ? 'Gifts consumibles'
+                    : activeTab === 'theme'
+                      ? 'Themes y ambientación'
+                      : 'Badges y extras'}
             </h3>
           </div>
           <Badge className="border-0 bg-white/[0.06] text-zinc-200">{filteredItems.length} items</Badge>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
-          {filteredItems.map((item) => (
-            <ShopCard key={item.id} item={item} pending={pendingItemId === item.id} onAction={handleAction} />
-          ))}
+            {filteredItems.map((item) => (
+              <ShopCard key={item.id} item={item} pending={pendingItemId === item.id} onAction={handleAction} />
+            ))}
+          {!filteredItems.length ? (
+            <Card className="rounded-[1.45rem] border-dashed border-white/[0.08] bg-black/20 p-6 text-sm text-zinc-400 md:col-span-2 2xl:col-span-4">
+              No hay items para este filtro todavía. Cambia de categoría o limpia la búsqueda.
+            </Card>
+          ) : null}
         </div>
       </div>
     </div>

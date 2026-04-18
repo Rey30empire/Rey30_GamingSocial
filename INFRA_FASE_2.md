@@ -15,7 +15,7 @@ Dejar el repo listo para pasar de demo local a una infraestructura compartible s
   - `publicUrl`
 - Health check publico en `/api/health`
 - `.env.example` con variables necesarias para auth y storage
-- `REY30_CLEAN_START.bat` ahora puede crear `.env` desde `.env.example`
+- `REY30_START_DEV.bat` ahora puede crear `.env` desde `.env.example`
 
 ## Variables nuevas
 

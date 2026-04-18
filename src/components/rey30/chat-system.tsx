@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { 
   Send, 
   Phone, 
@@ -27,23 +26,6 @@ interface ChatSystemProps {
   data?: ChatSnapshot
   onRefresh?: () => Promise<void> | void
 }
-
-const chatRooms: ChatRoomSnapshot[] = [
-  { id: '1', name: 'Chat Global', type: 'global', lastMessage: '¡Hola a todos!', unread: 12, online: 342 },
-  { id: '2', name: 'LunaGamer', type: 'private', avatar: 'luna', lastMessage: '¿Jugamos?', unread: 2 },
-  { id: '3', name: 'Torneo Clasico', type: 'group', lastMessage: '¡Inicia en 5 min!', unread: 5 },
-  { id: '4', name: 'Sala #42', type: 'game', lastMessage: '¡Mi turno!', unread: 1 },
-  { id: '5', name: 'DarkKnight_X', type: 'private', avatar: 'dark', lastMessage: 'GG 👍', unread: 0 },
-]
-
-const mockMessages: ChatMessageSnapshot[] = [
-  { id: '1', roomId: '1', user: { name: 'LunaGamer', avatar: 'luna' }, content: '¡Hola a todos! 👋', timestamp: '10:30', reactions: ['❤️', '🔥'] },
-  { id: '2', roomId: '1', user: { name: 'DarkKnight', avatar: 'dark' }, content: '¿Alguien para una partida de Mesa Clasica 13?', timestamp: '10:31' },
-  { id: '3', roomId: '1', user: { name: 'Yo', avatar: 'me', isMe: true }, content: '¡Yo me apunto! 🎮', timestamp: '10:32' },
-  { id: '4', roomId: '1', user: { name: 'CyberQueen', avatar: 'cyber' }, content: 'Yo también quiero jugar', timestamp: '10:33', reactions: ['💜'] },
-  { id: '5', roomId: '1', user: { name: 'NeonPlayer', avatar: 'neon' }, content: 'Vamos a crear la sala!', timestamp: '10:34' },
-  { id: '6', roomId: '1', user: { name: 'Yo', avatar: 'me', isMe: true }, content: 'Perfecto, creo la sala #42', timestamp: '10:35' },
-]
 
 function ChatRoomItem({ room, active, onClick }: { room: ChatRoomSnapshot; active: boolean; onClick: () => void }) {
   const getIcon = () => {
@@ -148,43 +130,43 @@ function MessageBubble({ message }: { message: ChatMessageSnapshot }) {
 }
 
 export function ChatSystem({ data, onRefresh }: ChatSystemProps) {
-  const rooms = data?.rooms ?? chatRooms
-  const snapshotMessages = data?.messages ?? mockMessages
-  const defaultActiveRoom = data?.activeRoomId ?? rooms[0]?.id ?? '1'
+  const rooms = data?.rooms ?? []
+  const snapshotMessages = data?.messages ?? []
+  const defaultActiveRoom = data?.activeRoomId ?? rooms[0]?.id ?? ''
   const [activeRoom, setActiveRoom] = useState<string>(defaultActiveRoom)
   const [message, setMessage] = useState('')
-  const [messages, setMessages] = useState<ChatMessageSnapshot[]>(snapshotMessages)
   const [isSending, setIsSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setActiveRoom(defaultActiveRoom)
-  }, [defaultActiveRoom])
-
-  useEffect(() => {
-    setMessages(snapshotMessages)
-  }, [snapshotMessages])
-
-  const activeRoomMeta = rooms.find((room) => room.id === activeRoom) ?? rooms[0]
-  const visibleMessages = messages.filter((entry) => entry.roomId === activeRoom)
-
-  const handleSend = async () => {
-    if (!message.trim()) return
-    const pendingMessage: ChatMessageSnapshot = {
-      id: Date.now().toString(),
-      roomId: activeRoom,
-      user: { name: 'Yo', avatar: 'me', isMe: true },
-      content: message,
-      timestamp: new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' }),
+    if (!rooms.length) {
+      setActiveRoom('')
+      return
     }
 
-    setMessages((current) => [...current, pendingMessage])
+    setActiveRoom((current) => {
+      if (current && rooms.some((room) => room.id === current)) {
+        return current
+      }
+
+      return defaultActiveRoom
+    })
+  }, [defaultActiveRoom, rooms])
+
+  const activeRoomMeta = rooms.find((room) => room.id === activeRoom) ?? rooms[0]
+  const visibleMessages = snapshotMessages.filter((entry) => entry.roomId === activeRoom)
+
+  const handleSend = async () => {
+    if (!message.trim() || !activeRoom) return
+
     const nextMessage = message
-    setMessage('')
+
     setIsSending(true)
+    setError(null)
 
     try {
-      await fetch('/api/chat/messages', {
+      const response = await fetch('/api/chat/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -194,8 +176,16 @@ export function ChatSystem({ data, onRefresh }: ChatSystemProps) {
           content: nextMessage,
         }),
       })
+      const payload = await response.json()
 
+      if (!response.ok) {
+        throw new Error(payload?.error ?? 'No se pudo enviar el mensaje.')
+      }
+
+      setMessage('')
       await onRefresh?.()
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'No se pudo enviar el mensaje.')
     } finally {
       setIsSending(false)
     }
@@ -203,7 +193,7 @@ export function ChatSystem({ data, onRefresh }: ChatSystemProps) {
 
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight)
-  }, [messages])
+  }, [snapshotMessages])
 
   return (
     <div className="flex h-full gap-4">
@@ -225,16 +215,20 @@ export function ChatSystem({ data, onRefresh }: ChatSystemProps) {
           </div>
         </div>
         <ScrollArea className="flex-1">
-          <div className="p-2 space-y-1">
-            {rooms.map((room) => (
-              <ChatRoomItem
-                key={room.id}
-                room={room}
-                active={activeRoom === room.id}
-                onClick={() => setActiveRoom(room.id)}
-              />
-            ))}
-          </div>
+          {rooms.length ? (
+            <div className="p-2 space-y-1">
+              {rooms.map((room) => (
+                <ChatRoomItem
+                  key={room.id}
+                  room={room}
+                  active={activeRoom === room.id}
+                  onClick={() => setActiveRoom(room.id)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="p-4 text-sm text-zinc-500">No hay conversaciones disponibles todavía.</div>
+          )}
         </ScrollArea>
       </div>
 
@@ -273,15 +267,24 @@ export function ChatSystem({ data, onRefresh }: ChatSystemProps) {
 
         {/* Messages */}
         <ScrollArea ref={scrollRef} className="flex-1 p-4">
-          <div className="space-y-4">
-            {visibleMessages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))}
-          </div>
+          {visibleMessages.length ? (
+            <div className="space-y-4">
+              {visibleMessages.map((msg) => (
+                <MessageBubble key={msg.id} message={msg} />
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-zinc-500">
+              {activeRoomMeta
+                ? 'Esta conversación todavía no tiene mensajes.'
+                : 'Selecciona una sala real para empezar a chatear.'}
+            </div>
+          )}
         </ScrollArea>
 
         {/* Input */}
         <div className="p-4 border-t border-purple-500/20">
+          {error ? <p className="mb-3 text-sm text-rose-300">{error}</p> : null}
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className="text-zinc-400 hover:text-purple-400">
               <Smile className="w-5 h-5" />

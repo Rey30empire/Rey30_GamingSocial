@@ -1,8 +1,9 @@
-import { HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { DeleteObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { mkdir, unlink, writeFile } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 
 export type StorageDriver = 'local' | 's3'
+type StorageArea = 'card-lab' | 'feed'
 
 export interface StoredAsset {
   driver: StorageDriver
@@ -18,9 +19,21 @@ export interface StorageHealthSnapshot {
   detail: string
 }
 
+export interface StoredAssetRef {
+  driver: StorageDriver | string | null
+  key: string | null
+  publicUrl?: string | null
+}
+
 const LOCAL_PUBLIC_ROOT = '/uploads'
-const LOCAL_CARD_LAB_DIR = join(process.cwd(), 'public', 'uploads', 'card-lab')
-const LOCAL_CARD_LAB_PUBLIC_BASE = `${LOCAL_PUBLIC_ROOT}/card-lab`
+const LOCAL_DIRECTORIES: Record<StorageArea, string> = {
+  'card-lab': join(process.cwd(), 'public', 'uploads', 'card-lab'),
+  feed: join(process.cwd(), 'public', 'uploads', 'feed'),
+}
+const LOCAL_PUBLIC_BASES: Record<StorageArea, string> = {
+  'card-lab': `${LOCAL_PUBLIC_ROOT}/card-lab`,
+  feed: `${LOCAL_PUBLIC_ROOT}/feed`,
+}
 
 let cachedS3Client: S3Client | null = null
 
@@ -36,11 +49,11 @@ function getStorageDriver(): StorageDriver {
   return process.env.STORAGE_DRIVER === 's3' ? 's3' : 'local'
 }
 
-function buildLocalAsset(fileName: string): StoredAsset {
+function buildLocalAsset(area: StorageArea, fileName: string): StoredAsset {
   return {
     driver: 'local',
-    key: `card-lab/${fileName}`,
-    publicUrl: `${LOCAL_CARD_LAB_PUBLIC_BASE}/${fileName}`,
+    key: `${area}/${fileName}`,
+    publicUrl: `${LOCAL_PUBLIC_BASES[area]}/${fileName}`,
   }
 }
 
@@ -107,13 +120,16 @@ function buildS3PublicUrl(key: string) {
   return `https://${config.bucket}.s3.${config.region}.amazonaws.com/${trimLeadingSlash(key)}`
 }
 
-export async function persistCardLabAsset(params: {
+async function persistImageAsset(
+  area: StorageArea,
+  params: {
   fileName: string
   contentType: string
   buffer: Buffer
-}): Promise<StoredAsset> {
+}
+): Promise<StoredAsset> {
   if (getStorageDriver() === 's3') {
-    const key = `card-lab/${params.fileName}`
+    const key = `${area}/${params.fileName}`
     const config = getS3Config()
 
     await getS3Client().send(
@@ -132,9 +148,61 @@ export async function persistCardLabAsset(params: {
     }
   }
 
-  await mkdir(LOCAL_CARD_LAB_DIR, { recursive: true })
-  await writeFile(join(LOCAL_CARD_LAB_DIR, params.fileName), params.buffer)
-  return buildLocalAsset(params.fileName)
+  await mkdir(LOCAL_DIRECTORIES[area], { recursive: true })
+  await writeFile(join(LOCAL_DIRECTORIES[area], params.fileName), params.buffer)
+  return buildLocalAsset(area, params.fileName)
+}
+
+export async function persistCardLabAsset(params: {
+  fileName: string
+  contentType: string
+  buffer: Buffer
+}): Promise<StoredAsset> {
+  return persistImageAsset('card-lab', params)
+}
+
+export async function persistFeedAsset(params: {
+  fileName: string
+  contentType: string
+  buffer: Buffer
+}): Promise<StoredAsset> {
+  return persistImageAsset('feed', params)
+}
+
+export async function deleteStoredAsset(asset: StoredAssetRef) {
+  if (asset.driver === 's3') {
+    if (!asset.key) {
+      return
+    }
+
+    const config = getS3Config()
+    await getS3Client().send(
+      new DeleteObjectCommand({
+        Bucket: config.bucket,
+        Key: asset.key,
+      })
+    )
+    return
+  }
+
+  const targetUrl = asset.publicUrl?.trim() || asset.key?.trim()
+
+  if (!targetUrl) {
+    return
+  }
+
+  const fileName = basename(targetUrl)
+  const area = targetUrl.includes('/feed/') || targetUrl.startsWith('feed/') ? 'feed' : 'card-lab'
+
+  try {
+    await unlink(join(LOCAL_DIRECTORIES[area], fileName))
+  } catch (error) {
+    const nodeError = error as NodeJS.ErrnoException
+
+    if (nodeError.code !== 'ENOENT') {
+      throw error
+    }
+  }
 }
 
 export async function getStorageHealthSnapshot(): Promise<StorageHealthSnapshot> {
@@ -166,20 +234,20 @@ export async function getStorageHealthSnapshot(): Promise<StorageHealthSnapshot>
   }
 
   try {
-    await mkdir(LOCAL_CARD_LAB_DIR, { recursive: true })
+    await Promise.all(Object.values(LOCAL_DIRECTORIES).map((directory) => mkdir(directory, { recursive: true })))
     return {
       driver: 'local',
       ok: true,
-      target: LOCAL_CARD_LAB_DIR,
-      publicBaseUrl: LOCAL_CARD_LAB_PUBLIC_BASE,
+      target: Object.values(LOCAL_DIRECTORIES).join(', '),
+      publicBaseUrl: LOCAL_PUBLIC_ROOT,
       detail: 'Storage local listo para desarrollo y demos privadas.',
     }
   } catch (error) {
     return {
       driver: 'local',
       ok: false,
-      target: LOCAL_CARD_LAB_DIR,
-      publicBaseUrl: LOCAL_CARD_LAB_PUBLIC_BASE,
+      target: Object.values(LOCAL_DIRECTORIES).join(', '),
+      publicBaseUrl: LOCAL_PUBLIC_ROOT,
       detail: error instanceof Error ? error.message : 'No se pudo preparar el storage local.',
     }
   }

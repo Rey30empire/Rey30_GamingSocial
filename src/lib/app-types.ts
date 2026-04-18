@@ -141,9 +141,57 @@ export interface ChatSnapshot {
   messages: ChatMessageSnapshot[]
 }
 
+export interface FeedAuthorSnapshot {
+  id: string
+  name: string
+  handle: string
+  avatar: string
+  level: number
+  isMe?: boolean
+}
+
+export interface FeedMediaSnapshot {
+  id: string
+  url: string
+  mimeType: string
+  width: number | null
+  height: number | null
+  originalName: string
+}
+
+export interface FeedCommentSnapshot {
+  id: string
+  content: string
+  timestamp: string
+  likes: number
+  isLikedByMe: boolean
+  author: FeedAuthorSnapshot
+  replies: FeedCommentSnapshot[]
+}
+
+export interface FeedPostSnapshot {
+  id: string
+  content: string
+  timestamp: string
+  likes: number
+  commentsCount: number
+  isLikedByMe: boolean
+  author: FeedAuthorSnapshot
+  media: FeedMediaSnapshot[]
+  comments: FeedCommentSnapshot[]
+}
+
+export interface FeedSnapshot {
+  posts: FeedPostSnapshot[]
+}
+
 export interface GameRoomSnapshot {
   id: string
   name: string
+  description: string
+  tableMode?: 'classic-hearts' | 'custom-table'
+  tableModeLabel?: string
+  inviteCode?: string | null
   host: {
     name: string
     avatar: string
@@ -152,8 +200,29 @@ export interface GameRoomSnapshot {
   players: number
   maxPlayers: number
   type: 'public' | 'private'
+  mode: 'normal' | 'ranked' | 'tournament'
+  pointsRequired: number
+  isRanked: boolean
+  voiceEnabled: boolean
+  isMember: boolean
+  isHost: boolean
+  isReadyByMe: boolean
+  readyCount: number
+  humanPlayers: number
+  canLaunch: boolean
+  requiresInvite: boolean
+  canViewInternals: boolean
   status: 'waiting' | 'starting' | 'full'
   bots?: number
+  activityLabel: string
+  seats: Array<{
+    id: string
+    name: string
+    avatar: string
+    isHost?: boolean
+    isReady?: boolean
+  }>
+  recentMessages: ChatMessageSnapshot[]
 }
 
 export interface LobbySnapshot {
@@ -162,9 +231,17 @@ export interface LobbySnapshot {
 
 export interface GameCardSnapshot {
   id: string
-  suit: 'crowns' | 'diamonds' | 'clubs' | 'spades'
+  suit?: 'crowns' | 'diamonds' | 'clubs' | 'spades'
+  element?: 'fire' | 'water' | 'earth' | 'air' | 'lightning' | 'shadow' | 'light'
+  moduleId?: string
+  type?: 'standard' | 'elemental' | 'special' | 'event' | 'unique'
   rank: number
   label: string
+  name?: string
+  themeColor?: string
+  accentColor?: string
+  isBlocked?: boolean
+  resolvedVisual?: CardVisualOverrideSnapshot
 }
 
 export interface GameTableCardSnapshot {
@@ -185,8 +262,11 @@ export interface GameSeatSnapshot {
   isMe?: boolean
   isConnected?: boolean
   isTurn?: boolean
-  position: 'top' | 'left' | 'right' | 'bottom'
+  position: 'top' | 'left' | 'right' | 'bottom' | 'dynamic'
+  angleDegrees?: number
   statusLabel?: string
+  blockedCards?: number
+  protectedPoints?: number
 }
 
 export interface GameEventSnapshot {
@@ -194,6 +274,17 @@ export interface GameEventSnapshot {
   type: string
   summary: string
   createdAt: string
+}
+
+export interface GameEffectHistorySnapshot {
+  id: string
+  type: 'draw-card' | 'block-card' | 'shift-turn' | 'protect-points' | 'score'
+  effectId: string
+  effectName: string
+  cardId: string
+  actorSeat: number
+  targetSeat?: number
+  summary: string
 }
 
 export interface GameControlsSnapshot {
@@ -206,6 +297,8 @@ export interface GameControlsSnapshot {
 }
 
 export interface GameSnapshot {
+  tableMode?: 'classic-hearts' | 'custom-table'
+  tableModeLabel?: string
   matchId: string
   roomId: string
   roomName: string
@@ -217,8 +310,24 @@ export interface GameSnapshot {
   currentTurnSeat: number
   currentTurnLabel: string
   summary: string
+  ruleHint: string
+  scoring?: {
+    id: string
+    mode: 'hearts-classic' | 'points' | 'trick-based' | 'custom'
+    pointPolarity?: 'high-score-wins' | 'low-score-wins'
+    pointsLabel?: string
+    summary?: string
+    protectionRule?: string
+  }
+  playerEffects?: {
+    blockedCardIds: string[]
+    blockedCards: number
+    protectedPoints: number
+  }
   hand: GameCardSnapshot[]
+  playableCardIds: string[]
   tableCards: GameTableCardSnapshot[]
+  tableMessages: ChatMessageSnapshot[]
   seats: GameSeatSnapshot[]
   standings: Array<{
     seat: number
@@ -229,7 +338,34 @@ export interface GameSnapshot {
     isMe?: boolean
   }>
   recentEvents: GameEventSnapshot[]
+  effectHistory?: GameEffectHistorySnapshot[]
   controls: GameControlsSnapshot
+  deck?: {
+    totalCards: number
+    cardsPerPlayer: number
+    leftoverCount: number
+    modules: Array<{
+      id: string
+      name: string
+      type: string
+      themeColor: string
+      cards: number
+      effects?: Array<{
+        id: string
+        name: string
+        description: string
+        trigger: 'on-score' | 'on-win-trick' | 'on-lead' | 'passive'
+        scoreModifier?: number
+        actions?: Array<{
+          type: 'draw-card' | 'block-card' | 'shift-turn' | 'protect-points'
+          target: 'self' | 'next-player' | 'winner' | 'table'
+          value?: number
+          label: string
+        }>
+        priority: number
+      }>
+    }>
+  }
 }
 
 export interface StreamSnapshot {
@@ -297,6 +433,9 @@ export interface LiveGiftOptionSnapshot {
   price: number
   currency: 'coins' | 'gems'
   image: string
+  ownedQuantity: number
+  canSend: boolean
+  helperText: string
 }
 
 export interface LiveSnapshot {
@@ -307,6 +446,56 @@ export interface LiveSnapshot {
   clips: CreatorClipSnapshot[]
   creator: LiveCreatorSnapshot | null
   giftOptions: LiveGiftOptionSnapshot[]
+  wallet: {
+    coins: string
+    gems: string
+  }
+}
+
+export interface LiveCallParticipantSnapshot {
+  id: string
+  userId: string
+  displayName: string
+  handle: string
+  avatar: string
+  isMe?: boolean
+  isHost?: boolean
+  microphoneEnabled: boolean
+  cameraEnabled: boolean
+  joinedAt: string
+  stateLabel: string
+}
+
+export interface LiveCallSignalSnapshot {
+  id: string
+  fromParticipantId: string
+  toParticipantId: string
+  type: 'offer' | 'answer' | 'ice'
+  payload: unknown
+  createdAt: string
+}
+
+export interface LiveCallStateSnapshot {
+  streamId: string
+  streamTitle: string
+  rtcEnabled: boolean
+  note: string | null
+  myParticipantId: string | null
+  participants: LiveCallParticipantSnapshot[]
+}
+
+export interface LiveCallIceServerSnapshot {
+  urls: string[]
+  username?: string
+  credential?: string
+}
+
+export interface LiveCallConfigSnapshot {
+  rtcEnabled: boolean
+  mode: 'disabled' | 'stun-only' | 'turn+stun'
+  hasTurnServer: boolean
+  note: string
+  iceServers: LiveCallIceServerSnapshot[]
 }
 
 export interface ShopItemSnapshot {
@@ -357,14 +546,32 @@ export interface CardArtworkSnapshot {
   height: number | null
 }
 
+export interface CardVisualOverrideSnapshot {
+  templateId: string | null
+  templateName: string | null
+  sourceScope: 'base' | 'deck' | 'card' | 'suit' | 'module' | 'element'
+  sourceTarget: string | null
+  appliedTemplateIds: string[]
+  styleId: string | null
+  styleName: string
+  colors: string | null
+  artwork: CardArtworkSnapshot | null
+  zoom: number
+  rotation: number
+  offsetX: number
+  offsetY: number
+}
+
 export interface DeckTemplateSnapshot {
   id: string
   name: string
   styleId: string | null
   styleName: string
-  scope: 'deck' | 'card' | 'suit'
+  scope: 'deck' | 'card' | 'suit' | 'module' | 'element'
   targetCard: string | null
   targetSuit: string | null
+  targetModule: string | null
+  targetElement: string | null
   zoom: number
   rotation: number
   offsetX: number
@@ -374,20 +581,85 @@ export interface DeckTemplateSnapshot {
   updatedAt: string
 }
 
+export interface CardVisualOverrideEntrySnapshot extends DeckTemplateSnapshot {
+  deckKey: string
+  sourceTemplateId: string | null
+  sourceTemplateName: string | null
+}
+
+export interface CardCreatorCardSnapshot {
+  displayName: string
+  username: string
+  roleLine: string
+  initials: string
+  followers: string
+  level: string
+  templatesCount: number
+  artworksCount: number
+  activeTemplateName: string
+  equippedStyleName: string
+  focusLabel: string
+  activityLabel: string
+}
+
+export interface CardDeckKeySnapshot {
+  key: string
+  name: string
+  styleId: string | null
+  isDefault?: boolean
+  isEquipped?: boolean
+}
+
 export interface CardCustomizationSnapshot {
   coins: string
   gems: string
+  activeDeckKey: string
+  deckOptions: CardDeckKeySnapshot[]
+  deckComparisons: Array<{
+    deckKey: string
+    deckName: string
+    isActive: boolean
+    isDefault?: boolean
+    overrides: CardVisualOverrideEntrySnapshot[]
+  }>
   styles: DeckStyleSnapshot[]
   templates: DeckTemplateSnapshot[]
+  visualOverrides: CardVisualOverrideEntrySnapshot[]
   artworks: CardArtworkSnapshot[]
+  deckModules: Array<{
+    id: string
+    name: string
+    type: string
+    element?: string
+    themeColor: string
+    cards: number
+    previewCards: GameCardSnapshot[]
+    effects: Array<{
+      id: string
+      name: string
+      description: string
+      trigger: 'on-score' | 'on-win-trick' | 'on-lead' | 'passive'
+      scoreModifier?: number
+      actions?: Array<{
+        type: 'draw-card' | 'block-card' | 'shift-turn' | 'protect-points'
+        target: 'self' | 'next-player' | 'winner' | 'table'
+        value?: number
+        label: string
+      }>
+      priority: number
+    }>
+  }>
+  creatorCard: CardCreatorCardSnapshot
   editor: {
     activeTemplateId: string | null
     templateName: string
     styleId: string | null
     artworkId: string | null
-    scope: 'deck' | 'card' | 'suit'
+    scope: 'deck' | 'card' | 'suit' | 'module' | 'element'
     targetCard: string | null
     targetSuit: string | null
+    targetModule: string | null
+    targetElement: string | null
     zoom: number
     rotation: number
     offsetX: number
@@ -424,9 +696,13 @@ export interface AppSnapshot {
   profile: ProfileSnapshot
 }
 
+export type ShellSnapshot = Pick<AppSnapshot, 'currentUser' | 'presence' | 'dashboard' | 'profile'>
+
 export interface CreateRoomPayload {
   name: string
   mode: 'normal' | 'ranked' | 'tournament'
   isPublic: boolean
   botCount: number
+  tableMode?: 'classic-hearts' | 'custom-table'
+  targetPlayers?: number
 }

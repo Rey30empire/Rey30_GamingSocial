@@ -3,11 +3,15 @@ import { auth } from '@/lib/auth'
 import { ensureSeedData } from '@/lib/app-data'
 import { LoginForm } from '@/components/auth/login-form'
 import { isDatabaseConfigured } from '@/lib/db'
-import { getDemoLoginCredentials } from '@/lib/runtime-config'
+import { getDemoLoginCredentials, isPreviewModeEnabled } from '@/lib/runtime-config'
 
 export const dynamic = 'force-dynamic'
 
 export default async function LoginPage() {
+  if (isPreviewModeEnabled()) {
+    redirect('/')
+  }
+
   const demoCredentials = getDemoLoginCredentials()
 
   if (!isDatabaseConfigured()) {

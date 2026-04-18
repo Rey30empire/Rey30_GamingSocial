@@ -1,7 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createChatMessage } from '@/lib/app-data'
+import { createChatMessage, getChatSnapshot } from '@/lib/app-data'
 import { createApiErrorResponse } from '@/lib/api-errors'
+import { getPreviewAppSnapshot } from '@/lib/preview-data'
 import { publishRealtimeEvent } from '@/lib/realtime'
+import { isPreviewModeEnabled } from '@/lib/runtime-config'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+export async function GET() {
+  try {
+    if (isPreviewModeEnabled()) {
+      return NextResponse.json(getPreviewAppSnapshot().chat)
+    }
+
+    const snapshot = await getChatSnapshot()
+    return NextResponse.json(snapshot)
+  } catch (error) {
+    return createApiErrorResponse(error, 'No se pudo cargar el chat.', 500)
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,6 +31,12 @@ export async function POST(request: NextRequest) {
 
     publishRealtimeEvent({
       type: 'message-created',
+      roomId,
+      note: content.slice(0, 80),
+    })
+
+    publishRealtimeEvent({
+      type: 'room-updated',
       roomId,
       note: content.slice(0, 80),
     })

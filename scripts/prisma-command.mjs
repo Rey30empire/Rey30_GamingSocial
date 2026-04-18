@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const prismaCliPath = resolve(scriptDirectory, '../node_modules/prisma/build/index.js')
+process.loadEnvFile?.(resolve(scriptDirectory, '../.env'))
 const configuredDatabaseSchema = process.env.REY30_DATABASE_SCHEMA?.trim() || 'rey30verse'
 
 function normalizeDatabaseUrl(url) {

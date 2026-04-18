@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getToken } from 'next-auth/jwt'
-import { getAuthSecret } from '@/lib/runtime-config'
+import { getAuthSecret, isDevelopmentAuthBypassEnabled, isPreviewModeEnabled } from '@/lib/runtime-config'
 
 const AUTH_SECRET = getAuthSecret()
 
@@ -21,6 +21,10 @@ export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl
 
   if (isPublicAsset(pathname) || pathname.startsWith('/api/auth') || pathname === '/api/health') {
+    return NextResponse.next()
+  }
+
+  if (isDevelopmentAuthBypassEnabled() || isPreviewModeEnabled()) {
     return NextResponse.next()
   }
 

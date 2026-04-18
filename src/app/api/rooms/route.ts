@@ -1,8 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRoom } from '@/lib/app-data'
+import { createRoom, getLobbySnapshot } from '@/lib/app-data'
 import { createApiErrorResponse } from '@/lib/api-errors'
-import { ensureGameMatchForRoom } from '@/lib/game-core'
+import { ensureGameMatchForRoomByMode } from '@/lib/game-runtime'
+import { getPreviewAppSnapshot } from '@/lib/preview-data'
 import { publishRealtimeEvent } from '@/lib/realtime'
+import { isPreviewModeEnabled } from '@/lib/runtime-config'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+export async function GET() {
+  try {
+    if (isPreviewModeEnabled()) {
+      return NextResponse.json(getPreviewAppSnapshot().lobby)
+    }
+
+    const snapshot = await getLobbySnapshot()
+    return NextResponse.json(snapshot)
+  } catch (error) {
+    return createApiErrorResponse(error, 'No se pudo cargar el lobby.', 500)
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,7 +29,9 @@ export async function POST(request: NextRequest) {
       name: typeof body?.name === 'string' ? body.name : '',
       mode: body?.mode === 'ranked' || body?.mode === 'tournament' ? body.mode : 'normal',
       isPublic: body?.isPublic !== false,
-      botCount: Number.isFinite(body?.botCount) ? Math.max(0, Math.min(3, Number(body.botCount))) : 0,
+      botCount: Number.isFinite(body?.botCount) ? Math.max(0, Math.min(9, Number(body.botCount))) : 0,
+      tableMode: body?.tableMode === 'custom-table' ? 'custom-table' : 'classic-hearts',
+      targetPlayers: Number.isFinite(body?.targetPlayers) ? Number(body.targetPlayers) : undefined,
     })
 
     publishRealtimeEvent({
@@ -20,7 +40,7 @@ export async function POST(request: NextRequest) {
       note: room.name,
     })
 
-    await ensureGameMatchForRoom(room.id)
+    await ensureGameMatchForRoomByMode(room.id)
 
     return NextResponse.json({ ok: true, room })
   } catch (error) {

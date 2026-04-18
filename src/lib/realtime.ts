@@ -1,11 +1,14 @@
 export type RealtimeEventType =
   | 'connected'
   | 'pulse'
+  | 'feed-updated'
   | 'message-created'
   | 'room-created'
+  | 'room-updated'
   | 'presence-updated'
   | 'match-updated'
   | 'stream-updated'
+  | 'live-call-updated'
   | 'inventory-updated'
   | 'customize-updated'
 

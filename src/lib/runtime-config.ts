@@ -1,11 +1,40 @@
 const truthyValues = new Set(['1', 'true', 'yes', 'on'])
+const falsyValues = new Set(['0', 'false', 'no', 'off'])
+const DEFAULT_STUN_URLS = ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302']
 
 function readEnv(name: string) {
   return process.env[name]?.trim() ?? ''
 }
 
+function readBooleanEnv(name: string) {
+  const value = readEnv(name)
+
+  if (!value) {
+    return undefined
+  }
+
+  const normalizedValue = value.toLowerCase()
+
+  if (truthyValues.has(normalizedValue)) {
+    return true
+  }
+
+  if (falsyValues.has(normalizedValue)) {
+    return false
+  }
+
+  return undefined
+}
+
 function getConfiguredDatabaseSchema() {
   return readEnv('REY30_DATABASE_SCHEMA') || 'rey30verse'
+}
+
+function readCsvEnv(name: string) {
+  return readEnv(name)
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
 }
 
 function normalizeDatabaseUrl(url: string) {
@@ -28,6 +57,22 @@ function normalizeDatabaseUrl(url: string) {
 
 export function isProductionEnvironment() {
   return process.env.NODE_ENV === 'production'
+}
+
+export function isDevelopmentAuthBypassEnabled() {
+  if (isProductionEnvironment()) {
+    return false
+  }
+
+  return readBooleanEnv('REY30_DISABLE_AUTH') ?? true
+}
+
+export function isPreviewModeEnabled() {
+  if (isProductionEnvironment()) {
+    return false
+  }
+
+  return readBooleanEnv('REY30_PREVIEW_MODE') ?? false
 }
 
 export function getDatabaseUrl() {
@@ -93,6 +138,19 @@ export function getDatabaseMode(databaseUrl = getDatabaseUrl()) {
     }
   }
 
+  try {
+    const parsedUrl = new URL(databaseUrl)
+
+    if (['127.0.0.1', 'localhost', 'postgres'].includes(parsedUrl.hostname.toLowerCase())) {
+      return {
+        mode: 'postgresql-local',
+        detail: 'PostgreSQL local de desarrollo configurado para runtime y migraciones.',
+      }
+    }
+  } catch {
+    // Ignore invalid URLs and keep the generic fallback below.
+  }
+
   if (databaseUrl.startsWith('postgres://') || databaseUrl.startsWith('postgresql://')) {
     return {
       mode: 'postgresql',
@@ -114,5 +172,69 @@ export function getDemoLoginCredentials() {
   return {
     identifier: 'alex@rey30verse.gg',
     password: 'rey30demo',
+  }
+}
+
+export function getRtcIceServers() {
+  const configuredStunUrls = readCsvEnv('RTC_STUN_URLS')
+  const configuredTurnUrls = readCsvEnv('RTC_TURN_URLS')
+  const turnUsername = readEnv('RTC_TURN_USERNAME')
+  const turnPassword = readEnv('RTC_TURN_PASSWORD')
+  const stunUrls = configuredStunUrls.length ? configuredStunUrls : DEFAULT_STUN_URLS
+
+  return [
+    {
+      urls: stunUrls,
+    },
+    ...(configuredTurnUrls.length && turnUsername && turnPassword
+      ? [
+          {
+            urls: configuredTurnUrls,
+            username: turnUsername,
+            credential: turnPassword,
+          },
+        ]
+      : []),
+  ]
+}
+
+export function getRtcModeSnapshot() {
+  const configuredStunUrls = readCsvEnv('RTC_STUN_URLS')
+  const configuredTurnUrls = readCsvEnv('RTC_TURN_URLS')
+  const turnUsername = readEnv('RTC_TURN_USERNAME')
+  const turnPassword = readEnv('RTC_TURN_PASSWORD')
+  const hasTurnServer = configuredTurnUrls.length > 0 && Boolean(turnUsername && turnPassword)
+
+  if (hasTurnServer) {
+    return {
+      enabled: true,
+      mode: 'turn+stun' as const,
+      hasTurnServer: true,
+      stunServerCount: (configuredStunUrls.length ? configuredStunUrls : DEFAULT_STUN_URLS).length,
+      turnServerCount: configuredTurnUrls.length,
+      detail: 'TURN y STUN configurados para videollamadas WebRTC más estables.',
+    }
+  }
+
+  if (configuredTurnUrls.length > 0) {
+    return {
+      enabled: true,
+      mode: 'stun-only' as const,
+      hasTurnServer: false,
+      stunServerCount: (configuredStunUrls.length ? configuredStunUrls : DEFAULT_STUN_URLS).length,
+      turnServerCount: configuredTurnUrls.length,
+      detail: 'RTC_TURN_URLS está definido, pero faltan RTC_TURN_USERNAME o RTC_TURN_PASSWORD.',
+    }
+  }
+
+  return {
+    enabled: true,
+    mode: 'stun-only' as const,
+    hasTurnServer: false,
+    stunServerCount: (configuredStunUrls.length ? configuredStunUrls : DEFAULT_STUN_URLS).length,
+    turnServerCount: 0,
+    detail: configuredStunUrls.length
+      ? 'STUN configurado por variables de entorno. Para redes difíciles conviene añadir TURN.'
+      : 'Usando STUN por defecto para desarrollo. Para despliegues reales conviene configurar TURN.',
   }
 }

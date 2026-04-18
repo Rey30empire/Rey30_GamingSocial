@@ -10,9 +10,10 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const templateId = typeof body?.templateId === 'string' ? body.templateId : ''
+    const deckKey = typeof body?.deckKey === 'string' ? body.deckKey : null
 
-    const template = await equipDeckTemplate(templateId)
-    const snapshot = await getCardCustomizationSnapshot()
+    const template = await equipDeckTemplate(templateId, deckKey)
+    const snapshot = await getCardCustomizationSnapshot({ deckKey })
 
     publishRealtimeEvent({
       type: 'customize-updated',

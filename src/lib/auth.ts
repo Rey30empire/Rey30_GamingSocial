@@ -1,11 +1,12 @@
-import type { NextAuthOptions } from 'next-auth'
+import type { NextAuthOptions, Session } from 'next-auth'
 import { getServerSession } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import { db } from '@/lib/db'
+import { db, isDatabaseConfigured } from '@/lib/db'
 import { verifyPassword } from '@/lib/passwords'
-import { getAuthSecret } from '@/lib/runtime-config'
+import { getAuthSecret, isDevelopmentAuthBypassEnabled } from '@/lib/runtime-config'
 
 const AUTH_SECRET = getAuthSecret()
+const DEVELOPMENT_BYPASS_HANDLE = 'alexrey30'
 
 export class AuthRequiredError extends Error {
   constructor(message = 'AUTH_REQUIRED') {
@@ -94,8 +95,65 @@ export const authOptions: NextAuthOptions = {
   },
 }
 
-export function auth() {
-  return getServerSession(authOptions)
+async function getDevelopmentBypassSession(): Promise<Session | null> {
+  if (!isDevelopmentAuthBypassEnabled() || !isDatabaseConfigured()) {
+    return null
+  }
+
+  const { ensureSeedData } = await import('@/lib/app-data')
+  await ensureSeedData()
+
+  const user = await db.user.findUnique({
+    where: {
+      handle: DEVELOPMENT_BYPASS_HANDLE,
+    },
+  })
+
+  if (!user) {
+    throw new Error('No se encontro el usuario demo para el bypass de desarrollo.')
+  }
+
+  return {
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      image: null,
+      handle: user.handle,
+      avatarSeed: user.avatarSeed,
+    },
+    expires: new Date(Date.now() + 1000 * 60 * 60 * 12).toISOString(),
+  }
+}
+
+async function validateSession(session: Session | null): Promise<Session | null> {
+  if (!session?.user?.id || !isDatabaseConfigured()) {
+    return session
+  }
+
+  const user = await db.user.findUnique({
+    where: {
+      id: session.user.id,
+    },
+    select: {
+      id: true,
+    },
+  })
+
+  if (!user) {
+    return null
+  }
+
+  return session
+}
+
+export async function auth() {
+  if (isDevelopmentAuthBypassEnabled()) {
+    return getDevelopmentBypassSession()
+  }
+
+  const session = await getServerSession(authOptions)
+  return validateSession(session)
 }
 
 export async function requireAuthSession() {

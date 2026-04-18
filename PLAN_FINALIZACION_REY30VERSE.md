@@ -33,7 +33,7 @@ Estado: hecho en esta iteracion
 - Eliminar dependencia y branding residual de la plataforma AI original.
 - Renombrar identidad tecnica del proyecto a `rey30verse`.
 - Reemplazar logo y metadata.
-- Crear un arranque estable con `REY30_CLEAN_START.bat`.
+- Crear un arranque estable con `REY30_START_DEV.bat`.
 
 ## Fase 2. Home premium tipo mockup
 
