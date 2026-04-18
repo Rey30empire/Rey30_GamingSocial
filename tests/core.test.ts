@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import test from 'node:test'
 import { GameMatchStatus, LiveCallParticipantRole, LiveCallSignalType } from '@prisma/client'
 
-process.loadEnvFile('.env')
+if (existsSync('.env')) {
+  process.loadEnvFile('.env')
+}
 process.env.NODE_ENV = 'test'
 process.env.REY30_PREVIEW_MODE = 'false'
 process.env.REY30_ENABLE_RUNTIME_SEED = 'true'
