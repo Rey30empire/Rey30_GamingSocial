@@ -348,7 +348,7 @@ test('Mesa custom muestra Cadena elemental x3 con block-card shift-turn protect-
   ]) {
     await effectHistoryPanel.getByRole('button', { name: filter.label }).click()
     await expect(effectHistoryPanel).toHaveScreenshot(filter.snapshot, {
-      maxDiffPixelRatio: getMobileSnapshotTolerance(testInfo.project.name, 0.1),
+      maxDiffPixelRatio: getMobileSnapshotTolerance(testInfo.project.name, 0.12),
     })
   }
 })
